@@ -1,6 +1,6 @@
 ---
 - name: Check if EKS cluster exists
-  shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }} || echo "Cluster doesn't exist"
+  shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }} || echo "Cluster does not exist"
   register: cluster_exists
   changed_when: false
   ignore_errors: yes
@@ -18,7 +18,7 @@
   args:
     executable: /bin/bash
   register: create_cluster
-  when: "'Cluster doesn\'t exist' in cluster_exists.stdout"
+  when: '"Cluster does not exist" in cluster_exists.stdout'
   async: 1800
   poll: 30
 
