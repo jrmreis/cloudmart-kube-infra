@@ -1,0 +1,30 @@
+---
+- name: Cleanup CloudMart Kubernetes Resources
+  hosts: workstation
+  become: no
+  gather_facts: yes
+
+  tasks:
+    - name: Delete Frontend Service
+      shell: kubectl delete service cloudmart-frontend-app-service
+      ignore_errors: yes
+
+    - name: Delete Frontend Deployment
+      shell: kubectl delete deployment cloudmart-frontend-app
+      ignore_errors: yes
+
+    - name: Delete Backend Service
+      shell: kubectl delete service cloudmart-backend-app-service
+      ignore_errors: yes
+
+    - name: Delete Backend Deployment
+      shell: kubectl delete deployment cloudmart-backend-app
+      ignore_errors: yes
+
+    - name: Wait for resources to be deleted
+      pause:
+        seconds: 30
+      
+    - name: Delete EKS Cluster
+      shell: eksctl delete cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
+      ignore_errors: yes
