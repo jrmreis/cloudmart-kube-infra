@@ -1,0 +1,32 @@
+---
+# AWS Configuration
+aws_region: us-east-1
+aws_profile: eksuser
+
+# EKS Cluster Configuration
+eks_cluster_name: cloudmart
+eks_node_group_name: standard-workers
+eks_node_type: t3.medium
+eks_nodes_count: 1
+
+# ECR Configuration
+ecr_backend_repo: cloudmart-backend
+ecr_frontend_repo: cloudmart-frontend
+
+# Application Configuration
+app_bedrock_agent_id: "<your-bedrock-agent-id>"
+app_bedrock_agent_alias_id: "<your-bedrock-agent-alias-id>"
+app_openai_api_key: "<your-openai-api-key>"
+app_openai_assistant_id: "<your-openai-assistant-id>"
+
+# Application Paths
+app_backend_dir: "/home/ec2-user/challenge-day2/backend"
+app_frontend_dir: "/home/ec2-user/challenge-day2/frontend"
+
+# Kubernetes Configuration
+k8s_service_account_name: cloudmart-pod-execution-role
+k8s_role_name: CloudMartPodExecutionRole
+
+# Pod Replicas
+backend_replicas: 1
+frontend_replicas: 1
