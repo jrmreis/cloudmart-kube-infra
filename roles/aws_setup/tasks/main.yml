@@ -1,0 +1,74 @@
+---
+- name: Configure AWS CLI
+  shell: aws configure set region {{ aws_region }} --profile {{ aws_profile }}
+  args:
+    executable: /bin/bash
+
+- name: Download eksctl
+  get_url:
+    url: "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz"
+    dest: /tmp/eksctl.tar.gz
+    mode: '0644'
+  register: download_eksctl
+  retries: 3
+  delay: 5
+  until: download_eksctl is succeeded
+
+- name: Extract eksctl
+  become: yes
+  unarchive:
+    src: /tmp/eksctl.tar.gz
+    dest: /tmp
+    remote_src: yes
+
+- name: Install eksctl
+  become: yes
+  copy:
+    src: /tmp/eksctl
+    dest: /usr/bin/eksctl
+    mode: '0755'
+    remote_src: yes
+
+- name: Verify eksctl installation
+  shell: eksctl version
+  register: eksctl_version
+  failed_when: eksctl_version.rc != 0
+
+- name: Download kubectl
+  get_url:
+    url: https://amazon-eks.s3.us-west-2.amazonaws.com/1.18.9/2020-11-02/bin/linux/amd64/kubectl
+    dest: /tmp/kubectl
+    mode: '0755'
+  register: download_kubectl
+  retries: 3
+  delay: 5
+  until: download_kubectl is succeeded
+
+- name: Create bin directory
+  file:
+    path: "{{ ansible_env.HOME }}/bin"
+    state: directory
+    mode: '0755'
+
+- name: Install kubectl
+  copy:
+    src: /tmp/kubectl
+    dest: "{{ ansible_env.HOME }}/bin/kubectl"
+    mode: '0755'
+    remote_src: yes
+
+- name: Add kubectl to PATH
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "export PATH=$PATH:$HOME/bin"
+    state: present
+
+- name: Source bashrc for kubectl
+  shell: source {{ ansible_env.HOME }}/.bashrc
+  args:
+    executable: /bin/bash
+
+- name: Verify kubectl installation
+  shell: kubectl version --short --client
+  register: kubectl_version
+  failed_when: kubectl_version.rc != 0
