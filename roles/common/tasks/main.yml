@@ -1,0 +1,37 @@
+---
+- name: Update system packages
+  become: yes
+  yum:
+    name: "*"
+    state: latest
+    update_only: yes
+  register: result
+  until: result is success
+  retries: 3
+  delay: 5
+
+- name: Install required packages
+  become: yes
+  yum:
+    name:
+      - yum-utils
+      - python3-pip
+      - jq
+      - wget
+      - unzip
+      - curl
+      - git
+    state: present
+  register: result
+  until: result is success
+  retries: 3
+  delay: 5
+
+- name: Ensure required directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - "{{ app_backend_dir }}"
+    - "{{ app_frontend_dir }}"
