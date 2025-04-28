@@ -1,23 +1,23 @@
 ---
 - name: Check if backend ECR repository exists
-  shell: aws ecr describe-repositories --repository-names {{ ecr_backend_repo }} --region {{ aws_region }} || echo "Repository doesn't exist"
+  shell: aws ecr describe-repositories --repository-names {{ ecr_backend_repo }} --region {{ aws_region }} || echo "NOT_EXISTS"
   register: backend_repo_exists
   changed_when: false
   ignore_errors: yes
 
 - name: Create backend ECR repository if it doesn't exist
   shell: aws ecr create-repository --repository-name {{ ecr_backend_repo }} --region {{ aws_region }}
-  when: "'Repository doesn\'t exist' in backend_repo_exists.stdout"
+  when: '"NOT_EXISTS" in backend_repo_exists.stdout'
 
 - name: Check if frontend ECR repository exists
-  shell: aws ecr describe-repositories --repository-names {{ ecr_frontend_repo }} --region {{ aws_region }} || echo "Repository doesn't exist"
+  shell: aws ecr describe-repositories --repository-names {{ ecr_frontend_repo }} --region {{ aws_region }} || echo "NOT_EXISTS"
   register: frontend_repo_exists
   changed_when: false
   ignore_errors: yes
 
 - name: Create frontend ECR repository if it doesn't exist
   shell: aws ecr create-repository --repository-name {{ ecr_frontend_repo }} --region {{ aws_region }}
-  when: "'Repository doesn\'t exist' in frontend_repo_exists.stdout"
+  when: '"NOT_EXISTS" in frontend_repo_exists.stdout'
 
 - name: Get AWS account ID
   shell: aws sts get-caller-identity --query Account --output text
@@ -62,28 +62,19 @@
     mode: '0644'
 
 - name: Wait for backend service to be available and get its public URL
-  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
   register: backend_lb
-  until: backend_lb.stdout != ""
-  retries: 30
+  until: backend_lb.stdout | length > 0
+  retries: 3
   delay: 10
   ignore_errors: yes
 
-- name: Create frontend .env file
+- name: Create frontend .env file with backend endpoint
   copy:
     dest: "{{ app_frontend_dir }}/.env"
     content: |
-      VITE_API_BASE_URL=http://{{ backend_lb.stdout }}:5000/api
+      VITE_API_BASE_URL=http://{{ backend_lb.stdout | default('cloudmart-backend-app-service') }}:5000/api
     mode: '0644'
-  when: backend_lb.stdout != ""
-
-- name: Create default frontend .env file if backend is not yet available
-  copy:
-    dest: "{{ app_frontend_dir }}/.env"
-    content: |
-      VITE_API_BASE_URL=http://cloudmart-backend-app-service:5000/api
-    mode: '0644'
-  when: backend_lb.stdout == ""
 
 - name: Build and push frontend image
   shell: |
