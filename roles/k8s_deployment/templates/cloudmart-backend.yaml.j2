@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudmart-backend-app
+spec:
+  replicas: {{ backend_replicas }}
+  selector:
+    matchLabels:
+      app: cloudmart-backend-app
+  template:
+    metadata:
+      labels:
+        app: cloudmart-backend-app
+    spec:
+      serviceAccountName: {{ k8s_service_account_name }}
+      containers:
+      - name: cloudmart-backend-app
+        image: {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:latest
+        env:
+        - name: PORT
+          value: "5000"
+        - name: AWS_REGION
+          value: "{{ aws_region }}"
+        - name: BEDROCK_AGENT_ID
+          value: "{{ app_bedrock_agent_id }}"
+        - name: BEDROCK_AGENT_ALIAS_ID
+          value: "{{ app_bedrock_agent_alias_id }}"
+        - name: OPENAI_API_KEY
+          value: "{{ app_openai_api_key }}"
+        - name: OPENAI_ASSISTANT_ID
+          value: "{{ app_openai_assistant_id }}"
+        ports:
+        - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudmart-backend-app-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: cloudmart-backend-app
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
