@@ -1,0 +1,68 @@
+---
+- name: Get AWS account ID
+  shell: aws sts get-caller-identity --query Account --output text
+  register: aws_account_id
+  changed_when: false
+
+- name: Create backend Kubernetes deployment file
+  template:
+    src: cloudmart-backend.yaml.j2
+    dest: "{{ app_backend_dir }}/cloudmart-backend.yaml"
+    mode: '0644'
+  vars:
+    aws_account_id: "{{ aws_account_id.stdout }}"
+
+- name: Apply backend Kubernetes deployment
+  shell: kubectl apply -f {{ app_backend_dir }}/cloudmart-backend.yaml
+  register: backend_deploy_result
+
+- name: Verify backend pods are running
+  shell: kubectl get pods -l app=cloudmart-backend-app
+  register: backend_pods
+  until: "'Running' in backend_pods.stdout"
+  retries: 30
+  delay: 10
+
+- name: Get backend service LoadBalancer endpoint
+  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: backend_lb
+  until: backend_lb.stdout != ""
+  retries: 30
+  delay: 10
+
+- name: Create frontend Kubernetes deployment file
+  template:
+    src: cloudmart-frontend.yaml.j2
+    dest: "{{ app_frontend_dir }}/cloudmart-frontend.yaml"
+    mode: '0644'
+  vars:
+    aws_account_id: "{{ aws_account_id.stdout }}"
+    backend_endpoint: "{{ backend_lb.stdout }}"
+
+- name: Apply frontend Kubernetes deployment
+  shell: kubectl apply -f {{ app_frontend_dir }}/cloudmart-frontend.yaml
+  register: frontend_deploy_result
+
+- name: Verify frontend pods are running
+  shell: kubectl get pods -l app=cloudmart-frontend-app
+  register: frontend_pods
+  until: "'Running' in frontend_pods.stdout"
+  retries: 30
+  delay: 10
+
+- name: Get frontend service LoadBalancer endpoint
+  shell: kubectl get svc cloudmart-frontend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: frontend_lb
+  until: frontend_lb.stdout != ""
+  retries: 30
+  delay: 10
+
+- name: Kubernetes deployment summary
+  debug:
+    msg: 
+      - "Kubernetes deployment completed successfully"
+      - "Backend service: http://{{ backend_lb.stdout }}:5000"
+      - "Frontend service: http://{{ frontend_lb.stdout }}:5001"
+      - "Check deployments with: kubectl get deployments"
+      - "Check services with: kubectl get services"
+      - "Check pods with: kubectl get pods"
