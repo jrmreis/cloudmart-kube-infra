@@ -1,0 +1,61 @@
+---
+- name: Check if EKS cluster exists
+  shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }} || echo "Cluster doesn't exist"
+  register: cluster_exists
+  changed_when: false
+  ignore_errors: yes
+
+- name: Create EKS cluster
+  shell: >
+    eksctl create cluster 
+    --name {{ eks_cluster_name }} 
+    --region {{ aws_region }} 
+    --nodegroup-name {{ eks_node_group_name }} 
+    --node-type {{ eks_node_type }} 
+    --nodes {{ eks_nodes_count }} 
+    --with-oidc 
+    --managed
+  args:
+    executable: /bin/bash
+  register: create_cluster
+  when: "'Cluster doesn\'t exist' in cluster_exists.stdout"
+  async: 1800
+  poll: 30
+
+- name: Update kubeconfig for EKS cluster
+  shell: aws eks update-kubeconfig --name {{ eks_cluster_name }} --region {{ aws_region }}
+  args:
+    executable: /bin/bash
+  register: update_kubeconfig
+
+- name: Wait for kubeconfig to be updated
+  pause:
+    seconds: 10
+  when: update_kubeconfig.changed
+
+- name: Verify EKS Services
+  shell: kubectl get svc
+  register: get_svc
+  retries: 5
+  delay: 10
+  until: get_svc.rc == 0
+
+- name: Verify EKS Nodes
+  shell: kubectl get nodes
+  register: get_nodes
+  retries: 5
+  delay: 10
+  until: get_nodes.rc == 0
+
+- name: Create IAM service account for CloudMart
+  shell: >
+    eksctl create iamserviceaccount
+    --cluster={{ eks_cluster_name }}
+    --name={{ k8s_service_account_name }}
+    --role-name {{ k8s_role_name }}
+    --attach-policy-arn=arn:aws:iam::aws:policy/AdministratorAccess
+    --region {{ aws_region }}
+    --approve
+  args:
+    executable: /bin/bash
+  register: create_service_account
