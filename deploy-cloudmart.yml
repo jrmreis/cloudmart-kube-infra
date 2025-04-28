@@ -1,0 +1,12 @@
+---
+- name: Deploy CloudMart to Kubernetes
+  hosts: workstation
+  become: no
+  gather_facts: yes
+
+  roles:
+    - common
+    - aws_setup
+    - eks_cluster
+    - ecr_images
+    - k8s_deployment
