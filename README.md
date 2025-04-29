@@ -27,3 +27,6 @@ A unified log of the setup process is available at:
 - /home/ec2-user/logs/cloudmart_setup_20250428-2107.log
 - Symlinked at /home/ec2-user/logs/latest.log
 # cloudmart-kube-infra
+
+ansible-playbook -i inventory.ini deploy-cloudmart.yml --connection=local
+
