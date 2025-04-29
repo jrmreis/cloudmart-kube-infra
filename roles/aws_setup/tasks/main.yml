@@ -4,15 +4,32 @@
   args:
     executable: /bin/bash
 
-- name: Download eksctl
+- name: Get OS type (Linux/Darwin)
+  shell: uname -s
+  register: os_type
+  changed_when: false
+
+- name: Download eksctl for Linux
   get_url:
-    url: "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz"
+    url: "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
     dest: /tmp/eksctl.tar.gz
     mode: '0644'
   register: download_eksctl
   retries: 3
   delay: 5
   until: download_eksctl is succeeded
+  when: os_type.stdout == "Linux"
+
+- name: Download eksctl for MacOS
+  get_url:
+    url: "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Darwin_amd64.tar.gz"
+    dest: /tmp/eksctl.tar.gz
+    mode: '0644'
+  register: download_eksctl
+  retries: 3
+  delay: 5
+  until: download_eksctl is succeeded
+  when: os_type.stdout == "Darwin"
 
 - name: Extract eksctl
   become: yes
@@ -69,6 +86,6 @@
     executable: /bin/bash
 
 - name: Verify kubectl installation
-  shell: kubectl version --short --client
+  shell: PATH=$PATH:$HOME/bin kubectl version --short --client
   register: kubectl_version
   failed_when: kubectl_version.rc != 0
