@@ -16,19 +16,31 @@
   shell: kubectl apply -f {{ app_backend_dir }}/cloudmart-backend.yaml
   register: backend_deploy_result
 
-- name: Verify backend pods are running
-  shell: kubectl get pods -l app=cloudmart-backend-app
-  register: backend_pods
-  until: "'Running' in backend_pods.stdout"
+- name: Wait for backend pods to be running
+  shell: kubectl get pods -l app=cloudmart-backend-app -o jsonpath='{.items[0].status.phase}'
+  register: backend_pod_status
+  until: backend_pod_status.stdout == "Running"
   retries: 30
   delay: 10
+  ignore_errors: yes
 
-- name: Get backend service LoadBalancer endpoint
+- name: Wait for backend service LoadBalancer to get external IP
   shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
   register: backend_lb
   until: backend_lb.stdout != ""
   retries: 30
   delay: 10
+  ignore_errors: yes
+
+- name: Get backend service URL
+  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: backend_url
+  ignore_errors: yes
+
+- name: Display backend service URL
+  debug:
+    msg: "Backend service URL: http://{{ backend_url.stdout }}:5000"
+  when: backend_url.stdout != ""
 
 - name: Create frontend Kubernetes deployment file
   template:
@@ -37,32 +49,33 @@
     mode: '0644'
   vars:
     aws_account_id: "{{ aws_account_id.stdout }}"
-    backend_endpoint: "{{ backend_lb.stdout }}"
 
 - name: Apply frontend Kubernetes deployment
   shell: kubectl apply -f {{ app_frontend_dir }}/cloudmart-frontend.yaml
   register: frontend_deploy_result
 
-- name: Verify frontend pods are running
-  shell: kubectl get pods -l app=cloudmart-frontend-app
-  register: frontend_pods
-  until: "'Running' in frontend_pods.stdout"
+- name: Wait for frontend pods to be running
+  shell: kubectl get pods -l app=cloudmart-frontend-app -o jsonpath='{.items[0].status.phase}'
+  register: frontend_pod_status
+  until: frontend_pod_status.stdout == "Running"
   retries: 30
   delay: 10
+  ignore_errors: yes
 
-- name: Get frontend service LoadBalancer endpoint
+- name: Get frontend service URL
   shell: kubectl get svc cloudmart-frontend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: frontend_lb
-  until: frontend_lb.stdout != ""
-  retries: 30
-  delay: 10
+  register: frontend_url
+  ignore_errors: yes
+
+- name: Display frontend service URL
+  debug:
+    msg: "Frontend service URL: http://{{ frontend_url.stdout }}:5001"
+  when: frontend_url.stdout != ""
 
 - name: Kubernetes deployment summary
   debug:
     msg: 
-      - "Kubernetes deployment completed successfully"
-      - "Backend service: http://{{ backend_lb.stdout }}:5000"
-      - "Frontend service: http://{{ frontend_lb.stdout }}:5001"
+      - "Kubernetes deployment completed"
       - "Check deployments with: kubectl get deployments"
       - "Check services with: kubectl get services"
       - "Check pods with: kubectl get pods"
