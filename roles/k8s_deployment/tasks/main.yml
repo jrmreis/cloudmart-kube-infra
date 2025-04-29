@@ -65,6 +65,7 @@
   template:
     src: frontend-env.j2
     dest: "{{ frontend_dir }}/.env"
+  when: backend_url is defined
   vars:
     backend_url: "{{ backend_endpoint }}"
 
