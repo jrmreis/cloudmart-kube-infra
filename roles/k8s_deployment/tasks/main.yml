@@ -58,8 +58,8 @@
 
 - name: Set actual backend URL if load balancer ready
   set_fact:
-    backend_endpoint: "http://{{ backend_url_final.stdout }}"
-  when: backend_url_final is succeeded and backend_url_final.stdout != ""
+    backend_url: "http://{{ backend_service_result.stdout }}"
+  when: backend_service_result.stdout != ""
 
 - name: Create frontend .env file with backend endpoint
   template:
