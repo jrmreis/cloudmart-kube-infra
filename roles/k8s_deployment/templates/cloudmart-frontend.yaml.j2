@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ frontend_app_name }}
+  namespace: {{ namespace | default('default') }}
+  labels:
+    app: {{ frontend_app_name }}
+spec:
+  replicas: {{ frontend_replicas | default('1') }}
+  selector:
+    matchLabels:
+      app: {{ frontend_app_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ frontend_app_name }}
+    spec:
+      volumes:
+      - name: env-config
+        configMap:
+          name: frontend-env-config
+      containers:
+      - name: frontend
+        image: {{ frontend_image }}:{{ frontend_version | default('latest') }}
+        resources:
+          limits:
+            memory: {{ frontend_memory_limit | default('512Mi') }}
+            cpu: {{ frontend_cpu_limit | default('500m') }}
+          requests:
+            memory: {{ frontend_memory_request | default('256Mi') }}
+            cpu: {{ frontend_cpu_request | default('250m') }}
+        ports:
+        - containerPort: {{ frontend_port | default('80') }}
+          name: http
+        volumeMounts:
+        - name: env-config
+          mountPath: /app/.env
+          subPath: .env
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env-config
+  namespace: {{ namespace | default('default') }}
+data:
+  .env: |
+    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ namespace | default('default') }}.svc.cluster.local:{{ backend_service_port | default('5000') }}/api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ frontend_app_name }}
+  namespace: {{ namespace | default('default') }}
+spec:
+  type: {{ frontend_service_type | default('ClusterIP') }}
+  ports:
+  - port: {{ frontend_service_port | default('80') }}
+    targetPort: {{ frontend_port | default('80') }}
+    protocol: TCP
+    name: http
+  selector:
+    app: {{ frontend_app_name }}
