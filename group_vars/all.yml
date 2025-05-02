@@ -30,3 +30,7 @@ k8s_role_name: CloudMartPodExecutionRole
 # Pod Replicas
 backend_replicas: 1
 frontend_replicas: 1
+
+# Frontend conection with Backend
+backend_service_name: cloudmart-backend
+backend_service_port: 5000  # Adjust as needed
