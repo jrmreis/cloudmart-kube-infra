@@ -80,6 +80,18 @@
     kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
   register: frontend_deployment_result
 
+- name: Create frontend ConfigMap from env file
+  k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: frontend-env-config
+        namespace: "{{ k8s_namespace | default('default') }}"
+      data:
+        .env: "{{ lookup('file', '/home/ec2-user/challenge-day2/frontend/') }}"
+
 - name: Display frontend deployment result
   debug:
     var: frontend_deployment_result.stdout_lines
