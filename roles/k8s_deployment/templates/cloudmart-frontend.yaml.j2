@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ frontend_app_name }}
+  namespace: {{ k8s_namespace | default('default') }}
+spec:
+  replicas: {{ frontend_replicas | default(1) }}
+  selector:
+    matchLabels:
+      app: {{ frontend_app_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ frontend_app_name }}
+    spec:
+      volumes:
+      - name: env-volume
+        configMap:
+          name: frontend-env-configmap
+      containers:
+      - name: frontend
+        image: {{ frontend_image }}
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: env-volume
+          mountPath: /app/.env
+          subPath: .env
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
