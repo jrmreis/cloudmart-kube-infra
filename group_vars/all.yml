@@ -34,3 +34,13 @@ frontend_replicas: 1
 # Frontend conection with Backend
 backend_service_name: cloudmart-backend
 backend_service_port: 5000  # Adjust as needed
+
+# Backend Service Configuration
+backend_service_name: cloudmart-backend-app
+backend_service_port: 5000
+
+# Frontend Configuration 
+frontend_app_name: cloudmart-frontend-app
+frontend_replicas: 1
+frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/cloudmart-frontend:latest"
+
