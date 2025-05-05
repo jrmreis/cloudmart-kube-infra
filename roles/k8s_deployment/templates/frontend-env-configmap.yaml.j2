@@ -1,0 +1,64 @@
+### 1. Create frontend-env-configmap.yaml.j2 template
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env-configmap
+  namespace: {{ k8s_namespace | default('default') }}
+data:
+  .env: |
+    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ k8s_namespace | default('default') }}.svc.cluster.local:{{ backend_port }}
+
+### 2. Update tasks/main.yml to include ConfigMap creation
+
+- name: Create frontend environment ConfigMap
+  template:
+    src: frontend-env-configmap.yaml.j2
+    dest: "{{ playbook_dir }}/generated/frontend-env-configmap.yaml"
+  vars:
+    backend_service_name: "cloudmart-backend-app-service"
+    backend_port: 5000
+    k8s_namespace: "{{ k8s_namespace | default('default') }}"
+
+- name: Apply frontend environment ConfigMap
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/generated/frontend-env-configmap.yaml"
+
+### 3. Update cloudmart-frontend.yaml.j2 to use the ConfigMap
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudmart-frontend-app
+  namespace: {{ k8s_namespace | default('default') }}
+spec:
+  replicas: {{ frontend_replicas | default(1) }}
+  selector:
+    matchLabels:
+      app: cloudmart-frontend-app
+  template:
+    metadata:
+      labels:
+        app: cloudmart-frontend-app
+    spec:
+      volumes:
+      - name: env-volume
+        configMap:
+          name: frontend-env-configmap
+      containers:
+      - name: frontend
+        image: {{ frontend_image }}
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: env-volume
+          mountPath: /app/.env
+          subPath: .env
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
