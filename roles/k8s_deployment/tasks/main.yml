@@ -60,6 +60,22 @@
     backend_url: "http://{{ backend_service_result.stdout }}"
   when: backend_service_result.stdout != ""
 
+- name: Ensure generated directory exists
+  file:
+    path: "{{ playbook_dir }}/generated"
+    state: directory
+    mode: '0755'
+
+- name: Create frontend environment ConfigMap
+  template:
+    src: frontend-env-configmap.yaml.j2
+    dest: "{{ playbook_dir }}/generated/frontend-env-configmap.yaml"
+
+- name: Apply frontend environment ConfigMap
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/generated/frontend-env-configmap.yaml"
+
 - name: Create frontend .env file with backend endpoint
   template:
     src: frontend-env.j2
