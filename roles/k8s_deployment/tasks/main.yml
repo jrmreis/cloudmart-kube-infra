@@ -71,9 +71,7 @@
     src: frontend-env-configmap.yaml.j2
     dest: "{{ playbook_dir }}/generated/frontend-env-configmap.yaml"
   vars:
-    backend_service_name: "cloudmart-backend-app"
-    backend_service_port: 5000
-    k8s_namespace: "{{ k8s_namespace | default('default') }}"
+    backend_port: "{{ backend_service_port }}"
 
 - name: Apply frontend environment ConfigMap
   k8s:
