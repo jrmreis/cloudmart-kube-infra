@@ -5,4 +5,4 @@ metadata:
   namespace: {{ k8s_namespace | default('default') }}
 data:
   .env: |
-    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ k8s_namespace | default('default') }}.svc.cluster.local:{{ backend_port }}
+    VITE_API_BASE_URL=http://{{ backend_service_name }}-service.{{ k8s_namespace | default('default') }}.svc.cluster.local:{{ backend_service_port }}/api
