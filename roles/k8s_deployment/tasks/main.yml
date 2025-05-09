@@ -45,13 +45,6 @@
   ignore_errors: yes
 
 - name: Get backend service URL
-  shell: |
-    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_url_final
-  when: backend_url is succeeded
-  ignore_errors: yes
-
-- name: Get backend service URL
   command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
   register: backend_service_result
   
@@ -71,9 +64,10 @@
 - name: Create frontend Kubernetes deployment file
   template:
     src: cloudmart-frontend.yaml.j2
-    dest: "{{ frontend_dir }}/cloudmart-frontend.yaml"
+    dest: /home/ec2-user/challenge-day2/frontend/cloudmart-frontend.yaml
   vars:
-    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    frontend_app_name: "cloudmart-frontend-app"
+    frontend_image: "{{ aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/cloudmart-frontend:latest"
 
 - name: Apply frontend Kubernetes deployment
   shell: |

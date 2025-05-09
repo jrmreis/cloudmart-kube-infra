@@ -34,3 +34,4 @@ frontend_replicas: 1
 # Frontend conection with Backend
 backend_service_name: cloudmart-backend
 backend_service_port: 5000  # Adjust as needed
+frontend_app_name: "cloudmart-frontend-app"
