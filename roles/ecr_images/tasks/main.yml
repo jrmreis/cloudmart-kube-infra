@@ -65,9 +65,9 @@
   shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
   register: backend_lb
   until: backend_lb.stdout | length > 0
-  retries: 3
+  retries: 30
   delay: 10
-  ignore_errors: yes
+  ignore_errors: no
 
 - name: Create frontend .env file with backend endpoint
   copy:
