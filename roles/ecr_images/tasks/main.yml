@@ -67,7 +67,7 @@
   until: backend_lb.stdout | length > 0
   retries: 30
   delay: 10
-  ignore_errors: no
+  ignore_errors: yes
 
 - name: Create frontend .env file with backend endpoint
   copy:
