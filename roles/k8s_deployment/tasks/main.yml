@@ -47,14 +47,10 @@
 - name: Get backend service URL
   shell: |
     kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_url_final
+  register: backend_service_result
   when: backend_url is succeeded
   ignore_errors: yes
-
-- name: Get backend service URL
-  command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_service_result
-  
+ 
 - name: Set actual backend URL if load balancer ready
   set_fact:
     backend_url: "http://{{ backend_service_result.stdout }}"
@@ -73,7 +69,12 @@
     src: cloudmart-frontend.yaml.j2
     dest: "{{ frontend_dir }}/cloudmart-frontend.yaml"
   vars:
+    frontend_app_name: "cloudmart-frontend-app"
     aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    frontend_version: "latest"
+    backend_service_name: "cloudmart-backend-app-service"
+    backend_service_port: "5000"
+    frontend_service_type: "LoadBalancer"
 
 - name: Apply frontend Kubernetes deployment
   shell: |
