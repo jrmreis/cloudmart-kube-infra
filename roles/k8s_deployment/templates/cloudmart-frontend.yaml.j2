@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ frontend_app_name }}
-  namespace: {{ namespace | default('default') }}
+  namespace: "{{ k8s_namespace | default('default') }}"
   labels:
     app: {{ frontend_app_name }}
 spec:
@@ -53,16 +53,16 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-env-config
-  namespace: {{ namespace | default('default') }}
+  namespace: "{{ k8s_namespace | default('default') }}"
 data:
   .env: |
-    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ namespace | default('default') }}.svc.cluster.local:{{ backend_service_port | default('5000') }}/api
+    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ k8s_namespace | default('default') }}.svc.cluster.local:{{ backend_service_port | default('5000') }}/api
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ frontend_app_name }}
-  namespace: {{ namespace | default('default') }}
+  namespace: "{{ k8s_namespace | default('default') }}"
 spec:
   type: {{ frontend_service_type | default('ClusterIP') }}
   ports:
