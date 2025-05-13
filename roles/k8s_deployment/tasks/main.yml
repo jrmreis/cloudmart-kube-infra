@@ -75,6 +75,7 @@
     backend_service_name: "cloudmart-backend-app-service"
     backend_service_port: "5000"
     frontend_service_type: "LoadBalancer"
+    frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/cloudmart-frontend"
 
 - name: Apply frontend Kubernetes deployment
   shell: |
