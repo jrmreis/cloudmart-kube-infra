@@ -93,7 +93,7 @@
         name: frontend-env-config
         namespace: "{{ k8s_namespace | default('default') }}"
       data:
-        .env: "{{ lookup('file', '/home/ec2-user/challenge-day2/frontend/') }}"
+        .env: "{{ lookup('file', '/home/ec2-user/challenge-day2/frontend/.env') }}"
 
 - name: Display frontend deployment result
   debug:
