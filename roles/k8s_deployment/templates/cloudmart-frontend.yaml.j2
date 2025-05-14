@@ -30,7 +30,7 @@ spec:
             memory: {{ frontend_memory_request | default('256Mi') }}
             cpu: {{ frontend_cpu_request | default('250m') }}
         ports:
-        - containerPort: {{ frontend_port | default('80') }}
+        - containerPort: {{ frontend_port | default('5001') }}
           name: http
         volumeMounts:
         - name: env-config
@@ -66,8 +66,8 @@ metadata:
 spec:
   type: {{ frontend_service_type | default('ClusterIP') }}
   ports:
-  - port: {{ frontend_service_port | default('80') }}
-    targetPort: {{ frontend_port | default('80') }}
+  - port: {{ frontend_service_port | default('5001') }}
+    targetPort: {{ frontend_port | default('5001') }}
     protocol: TCP
     name: http
   selector:
