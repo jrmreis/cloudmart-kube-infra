@@ -63,6 +63,10 @@
     backend_service_url: "{{ backend_service_url_raw.stdout }}"
   when: backend_service_url_raw.stdout != ""
 
+- name: Set frontend environment file path
+  set_fact:
+    frontend_env_file_path: "/tmp/frontend.env"
+
 - name: Create frontend .env file with backend endpoint
   template:
     src: frontend-env.j2
