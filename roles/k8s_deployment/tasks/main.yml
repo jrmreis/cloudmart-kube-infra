@@ -93,7 +93,7 @@
     kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
   register: frontend_deployment_result
 
-- name: Create frontend ConfigMap with backend service endpoint
+- name: Create frontend ConfigMap from env file
   kubernetes.core.k8s:
     state: present
     definition:
@@ -103,7 +103,7 @@
         name: frontend-env-config
         namespace: default
       data:
-        .env: "VITE_API_BASE_URL=http://cloudmart-backend-app-service:5000/api"
+        .env: "VITE_API_BASE_URL=http://{% if backend_service_url|default('') != '' %}{{ backend_service_url }}{% else %}cloudmart-backend-app-service.default.svc.cluster.local{% endif %}:5000/api"
 
 - name: Display frontend deployment result
   debug:
