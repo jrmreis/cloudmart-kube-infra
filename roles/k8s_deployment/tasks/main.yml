@@ -94,16 +94,16 @@
   register: frontend_deployment_result
 
 - name: Create frontend ConfigMap from env file
-  k8s:
+  kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: v1
       kind: ConfigMap
       metadata:
         name: frontend-env-config
-        namespace: "{{ k8s_namespace | default('default') }}"
+        namespace: default
       data:
-        .env: "{{ lookup('file', '/home/ec2-user/challenge-day2/frontend/.env') }}"
+        .env: "{{ lookup('file', frontend_env_file_path) }}"
 
 - name: Display frontend deployment result
   debug:
