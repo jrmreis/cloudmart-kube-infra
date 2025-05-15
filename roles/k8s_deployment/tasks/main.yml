@@ -68,10 +68,9 @@
 - name: Create frontend .env file with backend endpoint
   template:
     src: frontend-env.j2
-    dest: "{{ frontend_dir }}/.env"
-  when: backend_url is defined
+    dest: "{{ frontend_env_file_path }}"
   vars:
-    backend_url: "{{ backend_endpoint }}"
+    backend_url: "http://{{ backend_service_url }}:5000/api"
 
 - name: Create frontend Kubernetes deployment file
   template:
