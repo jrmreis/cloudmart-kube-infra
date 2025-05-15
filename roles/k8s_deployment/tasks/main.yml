@@ -54,16 +54,14 @@
   ignore_errors: yes
 
 - name: Get backend service URL
-  shell: |
-    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_service_result
-  when: backend_url is succeeded
-  ignore_errors: yes
- 
+  command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: backend_service_url_raw
+  changed_when: false
+
 - name: Set actual backend URL if load balancer ready
   set_fact:
-    backend_url: "http://{{ backend_service_result.stdout }}"
-  when: backend_service_result.stdout != ""
+    backend_service_url: "{{ backend_service_url_raw.stdout }}"
+  when: backend_service_url_raw.stdout != ""
 
 - name: Create frontend .env file with backend endpoint
   template:
