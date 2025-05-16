@@ -55,19 +55,19 @@
   args:
     executable: /bin/bash
 
+- name: Wait for backend service to be available and get its public URL
+  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
+  register: backend_lb
+  until: backend_lb.stdout | length > 0
+  retries: 20
+  delay: 10
+  ignore_errors: yes
+
 - name: Create frontend Dockerfile from template
   template:
     src: Dockerfile.frontend.j2
     dest: "{{ app_frontend_dir }}/Dockerfile"
     mode: '0644'
-
-- name: Wait for backend service to be available and get its public URL
-  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
-  register: backend_lb
-  until: backend_lb.stdout | length > 0
-  retries: 3
-  delay: 10
-  ignore_errors: yes
 
 - name: Create frontend .env file with backend endpoint
   copy:

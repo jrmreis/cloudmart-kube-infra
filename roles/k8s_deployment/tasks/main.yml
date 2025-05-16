@@ -1,21 +1,36 @@
 ---
+# Updated tasks for the k8s_deployment role
+- name: Install required Python modules for Kubernetes tasks
+  pip:
+    name:
+      - openshift
+      - kubernetes
+      - "urllib3==1.26.16"
+    state: present
+  become: yes
+  delegate_to: localhost
+
 - name: Get AWS account ID
-  shell: aws sts get-caller-identity --query Account --output text
-  register: aws_account_id
-  changed_when: false
+  shell: aws sts get-caller-identity --query 'Account' --output text
+  register: aws_account_id_output
+
+- name: Set AWS account ID fact
+  set_fact:
+    aws_account_id: "{{ aws_account_id_output.stdout }}"
 
 - name: Create backend Kubernetes deployment file
   template:
     src: cloudmart-backend.yaml.j2
-    dest: "{{ app_backend_dir }}/cloudmart-backend.yaml"
-    mode: '0644'
+    dest: "{{ backend_dir }}/cloudmart-backend.yaml"
   vars:
-    aws_account_id: "{{ aws_account_id.stdout }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
 
 - name: Apply backend Kubernetes deployment
-  shell: kubectl apply -f {{ app_backend_dir }}/cloudmart-backend.yaml
-  register: backend_deploy_result
+  shell: |
+    kubectl apply -f {{ backend_dir }}/cloudmart-backend.yaml
+  register: backend_deployment_result
 
+<<<<<<< HEAD
 - name: Wait for backend pods to be running
   shell: kubectl get pods -l app=cloudmart-backend-app -o jsonpath='{.items[0].status.phase}'
   register: backend_pod_status
@@ -41,19 +56,76 @@
   debug:
     msg: "Backend service URL: http://{{ backend_url.stdout }}:5000"
   when: backend_url.stdout != ""
+=======
+- name: Display backend deployment result
+  debug:
+    var: backend_deployment_result.stdout_lines
+  when: backend_deployment_result is succeeded
+
+- name: Wait for backend deployment to be available
+  shell: |
+    kubectl rollout status deployment/cloudmart-backend-app --timeout=120s
+  register: backend_status
+  retries: 3
+  delay: 10
+  until: backend_status.rc == 0
+  ignore_errors: yes
+
+- name: Wait for backend service to get external IP
+  shell: |
+    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: backend_url
+  until: backend_url.stdout != ""
+  retries: 15
+  delay: 20
+  ignore_errors: yes
+
+- name: Get backend service URL
+  command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: backend_service_url_raw
+  changed_when: false
+
+- name: Set actual backend URL if load balancer ready
+  set_fact:
+    backend_service_url: "{{ backend_service_url_raw.stdout }}"
+  when: backend_service_url_raw.stdout != ""
+
+- name: Set frontend environment file path
+  set_fact:
+    frontend_env_file_path: "/tmp/frontend.env"
+
+- name: Create frontend .env file with backend endpoint
+  template:
+    src: frontend-env.j2
+    dest: "/tmp/frontend.env"
+  vars:
+    backend_url: "http://{{ backend_service_url }}:5000/api"
+>>>>>>> dev
 
 - name: Create frontend Kubernetes deployment file
   template:
     src: cloudmart-frontend.yaml.j2
-    dest: "{{ app_frontend_dir }}/cloudmart-frontend.yaml"
-    mode: '0644'
+    dest: "{{ frontend_dir }}/cloudmart-frontend.yaml"
   vars:
+<<<<<<< HEAD
     aws_account_id: "{{ aws_account_id.stdout }}"
+=======
+    frontend_app_name: "cloudmart-frontend-app"
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    frontend_version: "latest"
+    backend_service_name: "cloudmart-backend-app-service"
+    backend_service_port: "5000"
+    frontend_service_type: "LoadBalancer"
+    frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region | default('us-east-1') }}.amazonaws.com/cloudmart-frontend"
+    k8s_namespace: "default"  # Explicit namespace to avoid the conflict
+>>>>>>> dev
 
 - name: Apply frontend Kubernetes deployment
-  shell: kubectl apply -f {{ app_frontend_dir }}/cloudmart-frontend.yaml
-  register: frontend_deploy_result
+  shell: |
+    kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
+  register: frontend_deployment_result
 
+<<<<<<< HEAD
 - name: Wait for frontend pods to be running
   shell: kubectl get pods -l app=cloudmart-frontend-app -o jsonpath='{.items[0].status.phase}'
   register: frontend_pod_status
@@ -79,3 +151,21 @@
       - "Check deployments with: kubectl get deployments"
       - "Check services with: kubectl get services"
       - "Check pods with: kubectl get pods"
+=======
+- name: Create frontend ConfigMap from env file
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: frontend-env-config
+        namespace: default
+      data:
+        .env: "VITE_API_BASE_URL=http://{% if backend_service_url|default('') != '' %}{{ backend_service_url }}{% else %}cloudmart-backend-app-service.default.svc.cluster.local{% endif %}:5000/api"
+
+- name: Display frontend deployment result
+  debug:
+    var: frontend_deployment_result.stdout_lines
+  when: frontend_deployment_result is succeeded
+>>>>>>> dev
