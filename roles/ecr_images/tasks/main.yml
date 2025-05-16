@@ -73,7 +73,7 @@
   copy:
     dest: "{{ app_frontend_dir }}/.env"
     content: |
-      VITE_API_BASE_URL=http://{{ backend_lb.stdout | default('cloudmart-backend-app-service') }}:5000/api
+      VITE_API_BASE_URL=http://cloudmart-backend-app-service.default.svc.cluster.local:5000/api
     mode: '0644'
 
 - name: Build and push frontend image
