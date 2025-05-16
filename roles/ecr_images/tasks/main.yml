@@ -59,8 +59,8 @@
   shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
   register: backend_lb
   until: backend_lb.stdout | length > 0
-  retries: 20
-  delay: 10
+  retries: 3
+  delay: 5
   ignore_errors: yes
 
 - name: Create frontend Dockerfile from template
