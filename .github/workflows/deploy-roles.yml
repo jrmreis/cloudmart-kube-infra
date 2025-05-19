@@ -123,4 +123,3 @@ jobs:
           kubectl apply -f k8s/
           
           echo "Kubernetes roles applied successfully"
-
