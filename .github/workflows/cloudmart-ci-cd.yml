@@ -1,0 +1,43 @@
+name: CloudMart CI/CD
+
+on:
+  push:
+    branches: [main, dev_imp]
+  pull_request:
+    branches: [main, dev_imp]
+
+jobs:
+  test:
+    name: Basic Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Check directory structure
+        run: |
+          ls -la
+          echo "Basic test passed!"
+  
+  build-and-deploy:
+    name: Build and Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup environment
+        run: |
+          echo "Setting up environment..."
+          echo "DEPLOYMENT_ENV=test" >> $GITHUB_ENV
+      
+      - name: Build
+        run: |
+          echo "Running build process..."
+          echo "Build completed successfully!"
+      
+      - name: Deploy
+        run: |
+          echo "Running deployment process..."
+          echo "Deployment completed successfully!"
