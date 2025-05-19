@@ -1,12 +1,72 @@
 ---
+# deploy-cloudmart.yml
 - name: Deploy CloudMart to Kubernetes
-  hosts: workstation
-  become: no
-  gather_facts: yes
-
-  roles:
-    - common
-    - aws_setup
-    - eks_cluster
-    - ecr_images
-    - k8s_deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    # Default values that can be overridden by extra-vars
+    frontend_replicas: 2
+    backend_replicas: 2
+    deployment_environment: production
+    # These will be overridden by GitHub Actions
+    frontend_image_tag: latest
+    backend_image_tag: latest
+    ecr_registry: "{{ lookup('env', 'ECR_REGISTRY') | default('123456789012.dkr.ecr.us-east-1.amazonaws.com', true) }}"
+  
+  tasks:
+    - name: Ensure directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ playbook_dir }}/temp"
+    
+    - name: Set image values for templates
+      set_fact:
+        frontend_image: "{{ ecr_registry }}/cloudmart-frontend:{{ frontend_image_tag }}"
+        backend_image: "{{ ecr_registry }}/cloudmart-backend:{{ backend_image_tag }}"
+    
+    - name: Include AWS setup role
+      include_role:
+        name: aws_setup
+    
+    - name: Include EKS cluster role
+      include_role:
+        name: eks_cluster
+    
+    - name: Include Kubernetes deployment role
+      include_role:
+        name: k8s_deployment
+        tasks_from: main
+      vars:
+        image_tag: "{{ frontend_image_tag }}"  # Will be used in templates
+    
+    - name: Verify deployment status
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ item }}"
+        namespace: default
+      register: deployment_status
+      until: 
+        - deployment_status.resources is defined
+        - deployment_status.resources | length > 0
+        - deployment_status.resources[0].status is defined
+        - deployment_status.resources[0].status.availableReplicas is defined
+        - deployment_status.resources[0].status.availableReplicas > 0
+      retries: 10
+      delay: 30
+      loop:
+        - cloudmart-frontend
+        - cloudmart-backend
+    
+    - name: Show deployment summary
+      debug:
+        msg: |
+          CloudMart deployment summary:
+          Environment: {{ deployment_environment }}
+          Frontend image: {{ frontend_image }}
+          Backend image: {{ backend_image }}
+          Frontend replicas: {{ frontend_replicas }}
+          Backend replicas: {{ backend_replicas }}
