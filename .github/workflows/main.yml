@@ -2,9 +2,9 @@ name: CloudMart CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev_imp]
   pull_request:
-    branches: [main]
+    branches: [main, dev_imp]
 
 jobs:
   test:
