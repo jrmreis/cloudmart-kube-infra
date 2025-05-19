@@ -1,0 +1,205 @@
+name: CloudMart Kubernetes CI/CD
+
+on:
+  push:
+    branches: 
+      - main
+      - add-roles-to-dev-imp
+  pull_request:
+    branches: 
+      - main
+      - add-roles-to-dev-imp
+  workflow_dispatch:
+
+env:
+  KUBERNETES_VERSION: "1.28.0"
+  KUBECTL_VERSION: "1.28.0"
+  KUSTOMIZE_VERSION: "5.1.1"
+
+jobs:
+  validate:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: '${{ env.KUBECTL_VERSION }}'
+      
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          sudo mv kustomize /usr/local/bin/
+      
+      - name: Install kubeconform
+        run: |
+          wget https://github.com/yannh/kubeconform/releases/download/v0.6.3/kubeconform-linux-amd64.tar.gz
+          tar xf kubeconform-linux-amd64.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+      
+      - name: Validate Kubernetes manifests
+        run: |
+          find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubeconform -kubernetes-version ${{ env.KUBERNETES_VERSION }}
+      
+      - name: Validate Kustomize builds
+        run: |
+          find . -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+            dir=$(dirname "$kustomization")
+            echo "Validating kustomize build in $dir"
+            kustomize build "$dir" | kubeconform -kubernetes-version ${{ env.KUBERNETES_VERSION }}
+          done
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Run Trivy vulnerability scanner for Kubernetes
+        run: |
+          find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs trivy config --severity HIGH,CRITICAL
+
+  test-deployment:
+    name: Test Deployment
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: '${{ env.KUBECTL_VERSION }}'
+          
+      - name: Setup Minikube
+        uses: medyagh/setup-minikube@master
+        with:
+          kubernetes-version: ${{ env.KUBERNETES_VERSION }}
+          
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          sudo mv kustomize /usr/local/bin/
+          
+      - name: Test Deployment
+        run: |
+          # Find and apply any kustomization files in the repo
+          find . -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+            dir=$(dirname "$kustomization")
+            echo "Applying kustomize build in $dir"
+            kustomize build "$dir" | kubectl apply --dry-run=client -f -
+          done
+          
+          # Test with plain YAML as a fallback
+          if [ ! -f "$(find . -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
+            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubectl apply --dry-run=client -f
+          fi
+          
+          echo "All resources validated with dry-run"
+
+  apply-to-dev:
+    name: Apply to Dev Environment
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.ref == 'refs/heads/add-roles-to-dev-imp' && github.event_name == 'push'
+    environment: development
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: '${{ env.KUBECTL_VERSION }}'
+          
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+        
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          sudo mv kustomize /usr/local/bin/
+          
+      - name: Apply changes to Dev environment
+        run: |
+          # Find and apply any kustomization files for dev environment
+          find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+            dir=$(dirname "$kustomization")
+            echo "Applying kustomize build in $dir"
+            kustomize build "$dir" | kubectl apply -f -
+          done
+          
+          # Apply plain YAML for dev environment as fallback
+          if [ ! -f "$(find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
+            find . -path "*/dev/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubectl apply -f
+          fi
+          
+          echo "All resources applied to development environment"
+
+  apply-to-prod:
+    name: Apply to Production Environment
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: '${{ env.KUBECTL_VERSION }}'
+          
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+        
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          sudo mv kustomize /usr/local/bin/
+          
+      - name: Apply changes to Production environment
+        run: |
+          # Find and apply any kustomization files for prod environment
+          find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+            dir=$(dirname "$kustomization")
+            echo "Applying kustomize build in $dir"
+            kustomize build "$dir" | kubectl apply -f -
+          done
+          
+          # Apply plain YAML for prod environment as fallback
+          if [ ! -f "$(find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
+            find . -path "*/prod/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubectl apply -f
+          fi
+          
+          echo "All resources applied to production environment"
