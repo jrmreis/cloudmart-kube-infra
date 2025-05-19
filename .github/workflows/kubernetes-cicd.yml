@@ -87,6 +87,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        
+      - name: Download Kubernetes manifests
+        uses: actions/download-artifact@v3
+        with:
+          name: kubernetes-manifests
+          path: kubernetes/
 
       - name: Setup Trivy
         uses: aquasecurity/trivy-action@master
@@ -95,16 +101,31 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
+          scan-ref: 'kubernetes/'
   
-  test-deployment:
-    name: Test Deployment
+  deploy-to-dev:
+    name: Deploy to Dev Environment
     runs-on: ubuntu-latest
     needs: [validate, security-scan]
-    if: github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/add-roles-to-dev-imp' && github.event_name == 'push'
+    environment: development
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         
+      - name: Download Kubernetes manifests
+        uses: actions/download-artifact@v3
+        with:
+          name: kubernetes-manifests
+          path: kubernetes/
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
       - name: Setup kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
@@ -112,24 +133,30 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
           
-      - name: Install AWS CLI
-        uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          
-      - name: Test Deployment with Dry Run
+      - name: Install eksctl
         run: |
-          echo "Performing kubectl dry-run tests"
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
           
-          # Test with plain YAML
-          if [ -n "$(find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | head -n 1)" ]; then
-            echo "Testing YAML files with dry-run"
-            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs -r kubectl apply --dry-run=client -f || echo "Warning: Dry-run failed for some YAML files"
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+        
+      - name: Create namespace if not exists
+        run: |
+          kubectl get namespace cloudmart-dev || kubectl create namespace cloudmart-dev
+          
+      - name: Apply changes to Dev environment
+        run: |
+          # Apply YAML files in roles/dev directory
+          if [ -n "$(find kubernetes/roles/dev -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | head -n 1)" ]; then
+            echo "Applying YAML files in roles/dev directory"
+            kubectl apply -f kubernetes/roles/dev/
           else
-            echo "No Kubernetes manifests found to test"
+            echo "No Kubernetes manifests found to apply"
           fi
           
-          echo "All resources tested with dry-run"
+          echo "All resources applied to development environment"
 
   apply-to-dev:
     name: Apply to Dev Environment
