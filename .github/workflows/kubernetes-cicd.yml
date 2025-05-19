@@ -14,7 +14,7 @@ on:
 env:
   KUBERNETES_VERSION: "1.28.0"
   KUBECTL_VERSION: "1.28.0"
-  KUSTOMIZE_VERSION: "5.1.1"
+  KUSTOMIZE_VERSION: "4.5.7"
 
 jobs:
   validate:
@@ -31,8 +31,10 @@ jobs:
       
       - name: Install Kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }} || \
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/kustomize/v${{ env.KUSTOMIZE_VERSION }}/hack/install_kustomize.sh" | bash
+          # Download specific version of kustomize binary
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o kustomize.tar.gz
+          tar -xzf kustomize.tar.gz
+          chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
           kustomize version
       
@@ -96,8 +98,10 @@ jobs:
           
       - name: Install Kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }} || \
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/kustomize/v${{ env.KUSTOMIZE_VERSION }}/hack/install_kustomize.sh" | bash
+          # Download specific version of kustomize binary
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o kustomize.tar.gz
+          tar -xzf kustomize.tar.gz
+          chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
           kustomize version
           
@@ -150,8 +154,12 @@ jobs:
         
       - name: Install Kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          # Download specific version of kustomize binary
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o kustomize.tar.gz
+          tar -xzf kustomize.tar.gz
+          chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
+          kustomize version
           
       - name: Apply changes to Dev environment
         run: |
@@ -196,8 +204,12 @@ jobs:
         
       - name: Install Kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s ${{ env.KUSTOMIZE_VERSION }}
+          # Download specific version of kustomize binary
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o kustomize.tar.gz
+          tar -xzf kustomize.tar.gz
+          chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
+          kustomize version
           
       - name: Apply changes to Production environment
         run: |
