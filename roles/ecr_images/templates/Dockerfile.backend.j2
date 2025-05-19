@@ -1,7 +1,19 @@
-FROM node:18
-WORKDIR /usr/src/app
-COPY package*.json ./
-RUN npm install
+# Dockerfile.backend.j2
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files and install dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
+
+# Copy source files
 COPY . .
+
 EXPOSE 5000
-CMD ["npm", "start"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget -q --spider http://localhost:5000/health || exit 1
+
+CMD ["node", "server.js"]
