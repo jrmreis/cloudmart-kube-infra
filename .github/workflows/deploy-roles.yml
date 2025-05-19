@@ -1,0 +1,126 @@
+name: CloudMart Kubernetes Roles CI/CD
+
+on:
+  push:
+    branches: 
+      - main
+      - add-roles-to-dev-imp
+  workflow_dispatch:
+
+env:
+  AWS_REGION: "us-east-1"  # Update this to match your AWS region
+
+jobs:
+  deploy-roles:
+    name: Deploy Kubernetes Roles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+      
+      - name: Create roles manifest
+        run: |
+          # Create directory for kubernetes manifests
+          mkdir -p k8s
+          
+          # Create a basic role definition based on the branch name
+          if [[ "$GITHUB_REF" == *"add-roles-to-dev-imp"* ]]; then
+            # Create dev roles
+            cat > k8s/dev-roles.yaml << 'EOF'
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: cloudmart-dev
+            ---
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: developer
+              namespace: cloudmart-dev
+            rules:
+            - apiGroups: [""]
+              resources: ["pods", "services", "configmaps", "secrets"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["apps"]
+              resources: ["deployments", "statefulsets", "daemonsets"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            ---
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: developer-binding
+              namespace: cloudmart-dev
+            subjects:
+            - kind: Group
+              name: cloudmart-developers
+              apiGroup: rbac.authorization.k8s.io
+            roleRef:
+              kind: Role
+              name: developer
+              apiGroup: rbac.authorization.k8s.io
+            EOF
+          else
+            # Create prod roles for main branch
+            cat > k8s/prod-roles.yaml << 'EOF'
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: cloudmart-prod
+            ---
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: operator
+              namespace: cloudmart-prod
+            rules:
+            - apiGroups: [""]
+              resources: ["pods", "services", "configmaps"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["apps"]
+              resources: ["deployments", "statefulsets", "daemonsets"]
+              verbs: ["get", "list", "watch"]
+            ---
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: operator-binding
+              namespace: cloudmart-prod
+            subjects:
+            - kind: Group
+              name: cloudmart-operators
+              apiGroup: rbac.authorization.k8s.io
+            roleRef:
+              kind: Role
+              name: operator
+              apiGroup: rbac.authorization.k8s.io
+            EOF
+          fi
+      
+      - name: Apply roles
+        run: |
+          # List all YAML files to verify
+          echo "Found the following Kubernetes manifest files:"
+          find k8s -name "*.yaml" -type f
+          
+          # Apply the manifests
+          kubectl apply -f k8s/
+          
+          echo "Kubernetes roles applied successfully"
+
