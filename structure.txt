@@ -1,0 +1,83 @@
+## Structure
+cloudmart-ansible/
+├── ansible.cfg
+├── inventory/
+│   ├── production.ini
+│   ├── staging.ini
+│   └── development.ini
+├── playbooks/
+│   ├── deploy-cloudmart.yml
+│   ├── cleanup-cloudmart.yml
+│   └── maintenance/
+│       ├── backup.yml
+│       ├── update-certificates.yml
+│       └── rolling-updates.yml
+├── group_vars/
+│   ├── all.yml
+│   ├── production.yml
+│   ├── staging.yml
+│   └── development.yml
+└── roles/
+    ├── common/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   └── main.yml
+    │   └── handlers/
+    │       └── main.yml
+    ├── aws_setup/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   └── main.yml
+    │   └── handlers/
+    │       └── main.yml
+    ├── eks_cluster/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   ├── main.yml
+    │   │   ├── create_cluster.yml
+    │   │   └── update_cluster.yml
+    │   └── templates/
+    │       └── eks-config.yaml.j2
+    ├── ecr_images/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   ├── main.yml
+    │   │   ├── build_images.yml
+    │   │   └── push_images.yml
+    │   └── templates/
+    │       ├── Dockerfile.backend.j2
+    │       └── Dockerfile.frontend.j2
+    ├── k8s_deployment/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   ├── main.yml
+    │   │   ├── deploy_backend.yml
+    │   │   ├── deploy_frontend.yml
+    │   │   └── deploy_database.yml
+    │   └── templates/
+    │       ├── cloudmart-backend.yaml.j2
+    │       ├── cloudmart-frontend.yaml.j2
+    │       ├── cloudmart-ingress.yaml.j2
+    │       ├── cloudmart-configmap.yaml.j2
+    │       └── cloudmart-secrets.yaml.j2
+    ├── monitoring/
+    │   ├── defaults/
+    │   │   └── main.yml
+    │   ├── tasks/
+    │   │   └── main.yml
+    │   └── templates/
+    │       ├── prometheus-values.yaml.j2
+    │       └── grafana-values.yaml.j2
+    └── security/
+        ├── defaults/
+        │   └── main.yml
+        ├── tasks/
+        │   └── main.yml
+        └── templates/
+            ├── network-policies.yaml.j2
+            └── pod-security-policies.yaml.j2
