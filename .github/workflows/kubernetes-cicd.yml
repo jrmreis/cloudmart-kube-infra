@@ -1,4 +1,4 @@
-name: CloudMart Kubernetes CI/CD
+name: CloudMart Kubernetes AWS CI/CD
 
 on:
   push:
@@ -12,9 +12,10 @@ on:
   workflow_dispatch:
 
 env:
-  KUBERNETES_VERSION: "1.28.0"
-  KUBECTL_VERSION: "1.28.0"
+  KUBERNETES_VERSION: "1.26.0"
+  KUBECTL_VERSION: "1.26.0"
   KUSTOMIZE_VERSION: "4.5.7"
+  AWS_REGION: "us-east-1"  # Update this to match your AWS region
 
 jobs:
   validate:
@@ -25,9 +26,22 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
+        run: |
+          curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+      
+      - name: Install AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
         with:
-          version: '${{ env.KUBECTL_VERSION }}'
+          version: 2
+        
+      - name: Install eksctl
+        run: |
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
       
       - name: Install Kustomize
         run: |
@@ -92,9 +106,16 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
+        run: |
+          curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+          
+      - name: Install AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
         with:
-          version: '${{ env.KUBECTL_VERSION }}'
+          version: 2
           
       - name: Install Kustomize
         run: |
@@ -142,15 +163,23 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
           
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: '${{ env.KUBECTL_VERSION }}'
+        run: |
+          curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+          
+      - name: Install eksctl
+        run: |
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
           
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
         
       - name: Install Kustomize
         run: |
@@ -164,15 +193,20 @@ jobs:
       - name: Apply changes to Dev environment
         run: |
           # Find and apply any kustomization files for dev environment
-          find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
-            dir=$(dirname "$kustomization")
-            echo "Applying kustomize build in $dir"
-            kustomize build "$dir" | kubectl apply -f -
-          done
-          
+          if [ -n "$(find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
+            find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+              dir=$(dirname "$kustomization")
+              echo "Applying kustomize build in $dir"
+              kustomize build "$dir" | kubectl apply -f -
+            done
           # Apply plain YAML for dev environment as fallback
-          if [ ! -f "$(find . -path "*/dev/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
-            find . -path "*/dev/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubectl apply -f
+          elif [ -n "$(find . -path "*/dev/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | head -n 1)" ]; then
+            find . -path "*/dev/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs -r kubectl apply -f
+          # Apply any YAML files if no dev directory exists
+          elif [ -n "$(find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -path "*/prod/*" | head -n 1)" ]; then
+            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -path "*/prod/*" | xargs -r kubectl apply -f
+          else
+            echo "No Kubernetes manifests found to apply"
           fi
           
           echo "All resources applied to development environment"
@@ -214,15 +248,20 @@ jobs:
       - name: Apply changes to Production environment
         run: |
           # Find and apply any kustomization files for prod environment
-          find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
-            dir=$(dirname "$kustomization")
-            echo "Applying kustomize build in $dir"
-            kustomize build "$dir" | kubectl apply -f -
-          done
-          
+          if [ -n "$(find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
+            find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
+              dir=$(dirname "$kustomization")
+              echo "Applying kustomize build in $dir"
+              kustomize build "$dir" | kubectl apply -f -
+            done
           # Apply plain YAML for prod environment as fallback
-          if [ ! -f "$(find . -path "*/prod/*" -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
-            find . -path "*/prod/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs kubectl apply -f
+          elif [ -n "$(find . -path "*/prod/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | head -n 1)" ]; then
+            find . -path "*/prod/*" -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs -r kubectl apply -f
+          # Apply any YAML files marked as production if no prod directory exists  
+          elif [ -n "$(find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -path "*/dev/*" | head -n 1)" ]; then
+            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -path "*/dev/*" | xargs -r kubectl apply -f
+          else
+            echo "No Kubernetes manifests found to apply"
           fi
           
           echo "All resources applied to production environment"
