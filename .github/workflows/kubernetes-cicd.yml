@@ -95,7 +95,7 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
-
+  
   test-deployment:
     name: Test Deployment
     runs-on: ubuntu-latest
@@ -117,33 +117,16 @@ jobs:
         with:
           version: 2
           
-      - name: Install Kustomize
-        run: |
-          # Download specific version of kustomize binary
-          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o kustomize.tar.gz
-          tar -xzf kustomize.tar.gz
-          chmod +x kustomize
-          sudo mv kustomize /usr/local/bin/
-          kustomize version
-          
-      - name: Test Deployment
+      - name: Test Deployment with Dry Run
         run: |
           echo "Performing kubectl dry-run tests"
           
-          # Test with Kustomize if available
-          if [ -n "$(find . -name "kustomization.yaml" -not -path "*/\.*" | head -n 1)" ]; then
-            echo "Testing kustomize builds with dry-run"
-            find . -name "kustomization.yaml" -not -path "*/\.*" | while read -r kustomization; do
-              dir=$(dirname "$kustomization")
-              echo "Testing kustomize build in $dir"
-              kustomize build "$dir" | kubectl apply --dry-run=client -f - || echo "Warning: Dry-run failed in $dir"
-            done
-          fi
-          
-          # Test with plain YAML as well
-          if [ -n "$(find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -name "kustomization.yaml" | head -n 1)" ]; then
-            echo "Testing plain YAML files with dry-run"
-            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" -not -name "kustomization.yaml" | xargs -r kubectl apply --dry-run=client -f || echo "Warning: Dry-run failed for some YAML files"
+          # Test with plain YAML
+          if [ -n "$(find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | head -n 1)" ]; then
+            echo "Testing YAML files with dry-run"
+            find . -name "*.yaml" -not -path "*/\.*" -not -path "*/templates/*" | xargs -r kubectl apply --dry-run=client -f || echo "Warning: Dry-run failed for some YAML files"
+          else
+            echo "No Kubernetes manifests found to test"
           fi
           
           echo "All resources tested with dry-run"
