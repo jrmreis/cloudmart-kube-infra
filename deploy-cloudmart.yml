@@ -70,4 +70,4 @@
           Backend image: {{ backend_image }}
           Frontend replicas: {{ frontend_replicas }}
           Backend replicas: {{ backend_replicas }}
-#test
+
