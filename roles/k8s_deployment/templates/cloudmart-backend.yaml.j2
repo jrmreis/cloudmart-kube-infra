@@ -1,46 +1,77 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cloudmart-backend-app
+  name: cloudmart-backend
+  labels:
+    app: cloudmart
+    component: backend
 spec:
-  replicas: {{ backend_replicas }}
+  replicas: {{ backend_replicas | default(2) }}
   selector:
     matchLabels:
-      app: cloudmart-backend-app
+      app: cloudmart
+      component: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
-        app: cloudmart-backend-app
+        app: cloudmart
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
     spec:
-      serviceAccountName: {{ k8s_service_account_name }}
       containers:
-      - name: cloudmart-backend-app
-        image: {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:latest
-        env:
-        - name: PORT
-          value: "5000"
-        - name: AWS_REGION
-          value: "{{ aws_region }}"
-        - name: BEDROCK_AGENT_ID
-          value: "{{ app_bedrock_agent_id }}"
-        - name: BEDROCK_AGENT_ALIAS_ID
-          value: "{{ app_bedrock_agent_alias_id }}"
-        - name: OPENAI_API_KEY
-          value: "{{ app_openai_api_key }}"
-        - name: OPENAI_ASSISTANT_ID
-          value: "{{ app_openai_assistant_id }}"
+      - name: backend
+        image: {{ ecr_registry }}/cloudmart-backend:{{ image_tag }}
+        imagePullPolicy: Always
         ports:
         - containerPort: 5000
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: cloudmart-backend-app-service
-spec:
-  type: LoadBalancer
-  selector:
-    app: cloudmart-backend-app
-  ports:
-    - protocol: TCP
-      port: 5000
-      targetPort: 5000
+        resources:
+          requests:
+            cpu: {{ backend_cpu_request | default('200m') }}
+            memory: {{ backend_memory_request | default('256Mi') }}
+          limits:
+            cpu: {{ backend_cpu_limit | default('400m') }}
+            memory: {{ backend_memory_limit | default('512Mi') }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: cloudmart-db-secrets
+              key: db_host
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: cloudmart-db-secrets
+              key: db_user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloudmart-db-secrets
+              key: db_password
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: cloudmart-db-secrets
+              key: db_name
+        - name: AWS_REGION
+          value: {{ aws_region }}
+      imagePullSecrets:
+      - name: {{ ecr_secret_name }}
