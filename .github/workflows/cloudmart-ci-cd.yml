@@ -2,87 +2,91 @@ name: CloudMart CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, dev_imp ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, dev_imp ]
+    branches: [ main ]
 
 env:
-  ECR_REPOSITORY: public.ecr.aws/l4c0j8h9/cloudmart
-  AWS_REGION: us-east-1
+  ECR_REPOSITORY: public.ecr.aws/l4c0j8h9/cloudmart-frontend
   EKS_CLUSTER_NAME: cloudmart
+  AWS_REGION: us-east-1
 
 jobs:
   build:
-    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
-      
+
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+      uses: aws-actions/configure-aws-credentials@v1
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-        
+
     - name: Login to Amazon ECR Public
       id: login-ecr-public
       run: |
         aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l4c0j8h9
-        
+
     - name: Build, tag, and push image to Amazon ECR
       id: build-image
       run: |
-        # Build Docker image
-        docker build -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
-        docker tag ${{ env.ECR_REPOSITORY }}:${{ github.sha }} ${{ env.ECR_REPOSITORY }}:latest
+        # Build a docker container and push it to ECR
+        TIMESTAMP=$(date +%s)
+        COMMIT_SHA=${GITHUB_SHA::8}
+        IMAGE_TAG="${TIMESTAMP}-${COMMIT_SHA}"
         
-        # Push Docker image to ECR
-        docker push ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        docker build -t ${{ env.ECR_REPOSITORY }}:latest .
+        docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        
         docker push ${{ env.ECR_REPOSITORY }}:latest
+        docker push ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
         
-        # Save image URI for the deploy job
-        echo "IMAGE_URI=${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_ENV
-        
-    - name: Generate Kubernetes manifests
-      run: |
-        # Replace CONTAINER_IMAGE placeholder with actual image URI
-        sed -i "s|CONTAINER_IMAGE|${{ env.IMAGE_URI }}|g" cloudmart-frontend.yaml
-        
-    - name: Upload Kubernetes manifests
-      uses: actions/upload-artifact@v3
-      with:
-        name: kubernetes-manifests
-        path: cloudmart-frontend.yaml
+        echo "::set-output name=image::${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"
 
+    - name: Save Kubernetes deployment file
+      run: |
+        sed -i "s|CONTAINER_IMAGE|${{ steps.build-image.outputs.image }}|g" cloudmart-frontend.yaml
+        cp cloudmart-frontend.yaml /tmp/cloudmart-frontend.yaml
+
+    - name: Upload Kubernetes deployment file
+      uses: actions/upload-artifact@v2
+      with:
+        name: k8s-deployment-file
+        path: /tmp/cloudmart-frontend.yaml
+        
   deploy:
-    name: Deploy to Kubernetes
     needs: build
     runs-on: ubuntu-latest
     
     steps:
-    - name: Download Kubernetes manifests
-      uses: actions/download-artifact@v3
-      with:
-        name: kubernetes-manifests
-        
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+      uses: aws-actions/configure-aws-credentials@v1
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Download Kubernetes deployment file
+      uses: actions/download-artifact@v2
+      with:
+        name: k8s-deployment-file
+        path: /tmp
+        
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
         
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
         
-    - name: Install kubectl
-      uses: azure/setup-kubectl@v3
-      
     - name: Deploy to Kubernetes
       run: |
-        kubectl apply -f cloudmart-frontend.yaml
-        kubectl get pods -l app=cloudmart-app
+        kubectl apply -f /tmp/cloudmart-frontend.yaml
+        kubectl get services
