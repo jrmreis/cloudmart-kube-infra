@@ -5,6 +5,5 @@
   gather_facts: yes
 
   roles:
-    - common
-    - aws_setup
-    - eks_cluster
+    - ecr_images
+    - k8s_deployment
