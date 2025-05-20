@@ -2,9 +2,9 @@ name: CloudMart CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev_imp ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev_imp ]
 
 env:
   ECR_REPOSITORY: public.ecr.aws/l4c0j8h9/cloudmart
