@@ -1,121 +1,88 @@
-name: CloudMart CI/CD
+name: CloudMart CI/CD Pipeline
 
 on:
   push:
-    branches: [main, dev_imp]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
+
+env:
+  ECR_REPOSITORY: public.ecr.aws/l4c0j8h9/cloudmart
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: cloudmart
 
 jobs:
-  # First job: Validate the structure and configurations
-  validate:
-    name: Validate Configs
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      
-      - name: Install Ansible
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible ansible-lint
-      
-      - name: Lint Ansible files
-        run: |
-          echo "Checking Ansible playbook syntax..."
-          if [ -f "deploy-cloudmart.yml" ]; then
-            ansible-playbook --syntax-check deploy-cloudmart.yml || echo "Warning: Syntax issues found"
-          else
-            echo "Looking for playbooks in the repository..."
-            find . -name "*.yml" -type f -exec echo {} \;
-            # Don't fail the job yet - just informational
-          fi
-      
-      - name: Check directory structure
-        run: |
-          echo "Repository structure:"
-          find . -type d -not -path "*/\.*" | sort
-  
-  # Second job: Build Docker images (if applicable)
   build:
-    name: Build Images
-    needs: validate
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      
-      - name: Build Backend (Dry Run)
-        run: |
-          if [ -d "backend" ]; then
-            echo "Building backend image..."
-            cd backend
-            # This is a dry run - no actual push
-            docker build -t cloudmart-backend:test . --no-cache || echo "Warning: Backend build issues"
-          else 
-            echo "Backend directory not found, skipping build."
-          fi
-      
-      - name: Build Frontend (Dry Run)
-        run: |
-          if [ -d "frontend" ]; then
-            echo "Building frontend image..."
-            cd frontend
-            # This is a dry run - no actual push
-            docker build -t cloudmart-frontend:test . --no-cache || echo "Warning: Frontend build issues"
-          else
-            echo "Frontend directory not found, skipping build."
-          fi
-  
-  # Third job: Test deployment with Ansible (dry run)
-  deploy-test:
-    name: Test Deployment
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR Public
+      id: login-ecr-public
+      run: |
+        aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l4c0j8h9
+        
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      run: |
+        # Build Docker image
+        docker build -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+        docker tag ${{ env.ECR_REPOSITORY }}:${{ github.sha }} ${{ env.ECR_REPOSITORY }}:latest
+        
+        # Push Docker image to ECR
+        docker push ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        docker push ${{ env.ECR_REPOSITORY }}:latest
+        
+        # Save image URI for the deploy job
+        echo "IMAGE_URI=${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_ENV
+        
+    - name: Generate Kubernetes manifests
+      run: |
+        # Replace CONTAINER_IMAGE placeholder with actual image URI
+        sed -i "s|CONTAINER_IMAGE|${{ env.IMAGE_URI }}|g" cloudmart-frontend.yaml
+        
+    - name: Upload Kubernetes manifests
+      uses: actions/upload-artifact@v3
+      with:
+        name: kubernetes-manifests
+        path: cloudmart-frontend.yaml
+
+  deploy:
+    name: Deploy to Kubernetes
     needs: build
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Download Kubernetes manifests
+      uses: actions/download-artifact@v3
+      with:
+        name: kubernetes-manifests
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+        
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
       
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      
-      - name: Install Ansible and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible kubernetes openshift jmespath
-      
-      - name: Run Ansible in check mode
-        run: |
-          echo "Testing Ansible deployment in check mode..."
-          if [ -f "cloudmart-ansible/deploy-cloudmart.yml" ]; then
-            cd cloudmart-ansible
-            # Run in check mode (dry run)
-            ansible-playbook deploy-cloudmart.yml --check -v || echo "Warning: Deployment issues detected"
-          elif [ -f "deploy-cloudmart.yml" ]; then
-            # Run in check mode (dry run)
-            ansible-playbook deploy-cloudmart.yml --check -v || echo "Warning: Deployment issues detected"
-          else
-            echo "Could not find deployment playbook. Please ensure it exists in the correct location."
-            find . -name "deploy-cloudmart.yml" -type f
-            # Don't fail the job - just informational
-          fi
-      
-      - name: Summarize findings
-        run: |
-          echo "===== CloudMart CI/CD Summary ====="
-          echo "Validation: Completed"
-          echo "Build: Completed"
-          echo "Deployment Test: Completed"
-          echo "Your CI/CD pipeline is now set up on GitHub Actions!"
-          echo "For actual deployments, you'll need to set up proper AWS credentials and other secrets."
-          echo "=================================="
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl apply -f cloudmart-frontend.yaml
+        kubectl get pods -l app=cloudmart-app
