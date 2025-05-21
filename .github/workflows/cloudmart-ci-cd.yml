@@ -7,7 +7,7 @@ on:
     branches: [ main, dev_imp ]
 
 env:
-  ECR_REPOSITORY: public.ecr.aws/l4c0j8h9/cloudmart-frontend
+  ECR_REPOSITORY: cloudmart-backend
   EKS_CLUSTER_NAME: cloudmart
   AWS_REGION: us-east-1
 
