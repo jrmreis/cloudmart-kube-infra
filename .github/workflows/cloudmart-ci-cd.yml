@@ -48,27 +48,25 @@ jobs:
         run: |
           if [ ! -f Dockerfile ]; then
             echo "Dockerfile not found. Creating a basic Dockerfile..."
-            cat > Dockerfile << 'EOF'
-            FROM node:18-alpine
-            
-            WORKDIR /usr/src/app
-            
-            # Copy package files and install dependencies
-            COPY package*.json ./
-            RUN npm install
-            
-            # Copy application code
-            COPY . .
-            
-            # Build the application if needed
-            RUN npm run build --if-present
-            
-            # Expose the application port
-            EXPOSE 5000
-            
-            # Start the application
-            CMD ["npm", "start"]
-            EOF
+            echo 'FROM node:18-alpine' > Dockerfile
+            echo '' >> Dockerfile
+            echo 'WORKDIR /usr/src/app' >> Dockerfile
+            echo '' >> Dockerfile
+            echo '# Copy package files and install dependencies' >> Dockerfile
+            echo 'COPY package*.json ./' >> Dockerfile
+            echo 'RUN npm install' >> Dockerfile
+            echo '' >> Dockerfile
+            echo '# Copy application code' >> Dockerfile
+            echo 'COPY . .' >> Dockerfile
+            echo '' >> Dockerfile
+            echo '# Build the application if needed' >> Dockerfile
+            echo 'RUN npm run build --if-present' >> Dockerfile
+            echo '' >> Dockerfile
+            echo '# Expose the application port' >> Dockerfile
+            echo 'EXPOSE 5000' >> Dockerfile
+            echo '' >> Dockerfile
+            echo '# Start the application' >> Dockerfile
+            echo 'CMD ["npm", "start"]' >> Dockerfile
             echo "Basic Dockerfile created."
           else
             echo "Dockerfile found."
@@ -78,7 +76,7 @@ jobs:
         id: build-image
         run: |
           # Get the proper ECR repository URI
-          ECR_URI="445567090747.dkr.ecr.us-east-1.amazonaws.com/${{ env.ECR_REPOSITORY }}"
+          ECR_URI="public.ecr.aws/l4c0j8h9/${{ env.ECR_REPOSITORY }}"
           
           # Build a docker container and push it to ECR
           TIMESTAMP=$(date +%s)
@@ -100,48 +98,46 @@ jobs:
         run: |
           if [ ! -f cloudmart-frontend.yaml ]; then
             echo "Deployment file not found. Creating a basic deployment file..."
-            cat > cloudmart-frontend.yaml << 'EOF'
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: cloudmart-frontend
-              labels:
-                app: cloudmart
-                tier: frontend
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: cloudmart
-                  tier: frontend
-              template:
-                metadata:
-                  labels:
-                    app: cloudmart
-                    tier: frontend
-                spec:
-                  containers:
-                  - name: cloudmart-frontend
-                    image: CONTAINER_IMAGE
-                    ports:
-                    - containerPort: 5000
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: cloudmart-frontend
-              labels:
-                app: cloudmart
-                tier: frontend
-            spec:
-              type: LoadBalancer
-              ports:
-              - port: 80
-                targetPort: 5000
-              selector:
-                app: cloudmart
-                tier: frontend
-            EOF
+            echo 'apiVersion: apps/v1' > cloudmart-frontend.yaml
+            echo 'kind: Deployment' >> cloudmart-frontend.yaml
+            echo 'metadata:' >> cloudmart-frontend.yaml
+            echo '  name: cloudmart-frontend' >> cloudmart-frontend.yaml
+            echo '  labels:' >> cloudmart-frontend.yaml
+            echo '    app: cloudmart' >> cloudmart-frontend.yaml
+            echo '    tier: frontend' >> cloudmart-frontend.yaml
+            echo 'spec:' >> cloudmart-frontend.yaml
+            echo '  replicas: 1' >> cloudmart-frontend.yaml
+            echo '  selector:' >> cloudmart-frontend.yaml
+            echo '    matchLabels:' >> cloudmart-frontend.yaml
+            echo '      app: cloudmart' >> cloudmart-frontend.yaml
+            echo '      tier: frontend' >> cloudmart-frontend.yaml
+            echo '  template:' >> cloudmart-frontend.yaml
+            echo '    metadata:' >> cloudmart-frontend.yaml
+            echo '      labels:' >> cloudmart-frontend.yaml
+            echo '        app: cloudmart' >> cloudmart-frontend.yaml
+            echo '        tier: frontend' >> cloudmart-frontend.yaml
+            echo '    spec:' >> cloudmart-frontend.yaml
+            echo '      containers:' >> cloudmart-frontend.yaml
+            echo '      - name: cloudmart-frontend' >> cloudmart-frontend.yaml
+            echo '        image: CONTAINER_IMAGE' >> cloudmart-frontend.yaml
+            echo '        ports:' >> cloudmart-frontend.yaml
+            echo '        - containerPort: 5000' >> cloudmart-frontend.yaml
+            echo '---' >> cloudmart-frontend.yaml
+            echo 'apiVersion: v1' >> cloudmart-frontend.yaml
+            echo 'kind: Service' >> cloudmart-frontend.yaml
+            echo 'metadata:' >> cloudmart-frontend.yaml
+            echo '  name: cloudmart-frontend' >> cloudmart-frontend.yaml
+            echo '  labels:' >> cloudmart-frontend.yaml
+            echo '    app: cloudmart' >> cloudmart-frontend.yaml
+            echo '    tier: frontend' >> cloudmart-frontend.yaml
+            echo 'spec:' >> cloudmart-frontend.yaml
+            echo '  type: LoadBalancer' >> cloudmart-frontend.yaml
+            echo '  ports:' >> cloudmart-frontend.yaml
+            echo '  - port: 80' >> cloudmart-frontend.yaml
+            echo '    targetPort: 5000' >> cloudmart-frontend.yaml
+            echo '  selector:' >> cloudmart-frontend.yaml
+            echo '    app: cloudmart' >> cloudmart-frontend.yaml
+            echo '    tier: frontend' >> cloudmart-frontend.yaml
             echo "Basic deployment file created."
           else
             echo "Deployment file found."
