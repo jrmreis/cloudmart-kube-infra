@@ -1,0 +1,68 @@
+name: Deploy CloudMart to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      cluster_name:
+        description: 'EKS Cluster name'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        default: 'us-east-1'
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.environment }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible boto3 kubernetes
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+      
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ github.event.inputs.cluster_name }} --region ${{ github.event.inputs.aws_region }}
+      
+      - name: Run Ansible playbook
+        run: |
+          cd ansible
+          ansible-playbook -i inventory/${{ github.event.inputs.environment }}.yml deploy.yml \
+            -e "environment=${{ github.event.inputs.environment }}" \
+            -e "cluster_name=${{ github.event.inputs.cluster_name }}" \
+            -e "aws_region=${{ github.event.inputs.aws_region }}"
