@@ -6,54 +6,69 @@ on:
       - main
       - add-roles-to-dev-imp
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy roles to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
 
-env:
-  AWS_REGION: "us-east-1"  # Update this to match your AWS region
+permissions:
+  id-token: write  # Required for OIDC authentication with AWS
+  contents: read
 
 jobs:
   deploy-roles:
     name: Deploy Kubernetes Roles
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         
       - name: Setup kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-          kubectl version --client
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.26.0'
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
           
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
       
       - name: Create roles manifest
+        env:
+          DEV_NAMESPACE: ${{ secrets.DEV_NAMESPACE || 'cloudmart-dev' }}
+          PROD_NAMESPACE: ${{ secrets.PROD_NAMESPACE || 'cloudmart-prod' }}
+          DEV_GROUP: ${{ secrets.DEV_GROUP || 'cloudmart-developers' }}
+          OPS_GROUP: ${{ secrets.OPS_GROUP || 'cloudmart-operators' }}
         run: |
           # Create directory for kubernetes manifests
           mkdir -p k8s
           
-          # Create a basic role definition based on the branch name
-          if [[ "$GITHUB_REF" == *"add-roles-to-dev-imp"* ]]; then
+          # Create role definitions based on the branch or manual input
+          if [[ "${{ github.event.inputs.environment }}" == "dev" || ("${{ github.event.inputs.environment }}" == "" && "$GITHUB_REF" != "refs/heads/main") ]]; then
+            echo "Creating development environment roles"
             # Create dev roles
-            cat > k8s/dev-roles.yaml << 'EOF'
+            cat > k8s/dev-roles.yaml << EOF
             apiVersion: v1
             kind: Namespace
             metadata:
-              name: cloudmart-dev
+              name: $DEV_NAMESPACE
             ---
             apiVersion: rbac.authorization.k8s.io/v1
             kind: Role
             metadata:
               name: developer
-              namespace: cloudmart-dev
+              namespace: $DEV_NAMESPACE
             rules:
             - apiGroups: [""]
               resources: ["pods", "services", "configmaps", "secrets"]
@@ -66,10 +81,10 @@ jobs:
             kind: RoleBinding
             metadata:
               name: developer-binding
-              namespace: cloudmart-dev
+              namespace: $DEV_NAMESPACE
             subjects:
             - kind: Group
-              name: cloudmart-developers
+              name: $DEV_GROUP
               apiGroup: rbac.authorization.k8s.io
             roleRef:
               kind: Role
@@ -77,18 +92,19 @@ jobs:
               apiGroup: rbac.authorization.k8s.io
             EOF
           else
+            echo "Creating production environment roles"
             # Create prod roles for main branch
-            cat > k8s/prod-roles.yaml << 'EOF'
+            cat > k8s/prod-roles.yaml << EOF
             apiVersion: v1
             kind: Namespace
             metadata:
-              name: cloudmart-prod
+              name: $PROD_NAMESPACE
             ---
             apiVersion: rbac.authorization.k8s.io/v1
             kind: Role
             metadata:
               name: operator
-              namespace: cloudmart-prod
+              namespace: $PROD_NAMESPACE
             rules:
             - apiGroups: [""]
               resources: ["pods", "services", "configmaps"]
@@ -101,10 +117,10 @@ jobs:
             kind: RoleBinding
             metadata:
               name: operator-binding
-              namespace: cloudmart-prod
+              namespace: $PROD_NAMESPACE
             subjects:
             - kind: Group
-              name: cloudmart-operators
+              name: $OPS_GROUP
               apiGroup: rbac.authorization.k8s.io
             roleRef:
               kind: Role
@@ -119,7 +135,23 @@ jobs:
           echo "Found the following Kubernetes manifest files:"
           find k8s -name "*.yaml" -type f
           
-          # Apply the manifests
+          # Apply the manifests with kubectl
           kubectl apply -f k8s/
           
           echo "Kubernetes roles applied successfully"
+          
+      - name: Verify role creation
+        if: success()
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "dev" || ("${{ github.event.inputs.environment }}" == "" && "$GITHUB_REF" != "refs/heads/main") ]]; then
+            kubectl get roles -n ${{ secrets.DEV_NAMESPACE || 'cloudmart-dev' }}
+            kubectl get rolebindings -n ${{ secrets.DEV_NAMESPACE || 'cloudmart-dev' }}
+          else
+            kubectl get roles -n ${{ secrets.PROD_NAMESPACE || 'cloudmart-prod' }}
+            kubectl get rolebindings -n ${{ secrets.PROD_NAMESPACE || 'cloudmart-prod' }}
+          fi
+          
+      - name: Cleanup sensitive information
+        if: always()
+        run: |
+          rm -f ~/.kube/config
