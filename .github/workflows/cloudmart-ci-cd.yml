@@ -44,28 +44,29 @@ jobs:
         run: |
           aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l4c0j8h9
 
+      
       - name: Check for Dockerfile and create if missing
         run: |
           if [ ! -f Dockerfile ]; then
             echo "Dockerfile not found. Creating a basic Dockerfile..."
             cat > Dockerfile << 'EOF'
             FROM node:18-alpine
-
+      
             WORKDIR /usr/src/app
-
+      
             # Copy package files and install dependencies
             COPY package*.json ./
             RUN npm install
-
+      
             # Copy application code
             COPY . .
-
+      
             # Build the application if needed
             RUN npm run build --if-present
-
+      
             # Expose the application port
             EXPOSE 5000
-
+      
             # Start the application
             CMD ["npm", "start"]
             EOF
