@@ -24,20 +24,20 @@ jobs:
       
       # OPTION 1: Configure AWS credentials using IAM Access Keys
       # Uncomment this section if you want to use IAM access keys
-      - name: Configure AWS credentials with access keys
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      #- name: Configure AWS credentials with access keys
+      #  uses: aws-actions/configure-aws-credentials@v1
+      #  with:
+      #    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #    aws-region: ${{ env.AWS_REGION }}
       
       # OPTION 2: Configure AWS credentials using OIDC
       # Uncomment this section if you want to use OIDC (and comment out the section above)
-      # - name: Configure AWS credentials with OIDC
-      #   uses: aws-actions/configure-aws-credentials@v1
-      #   with:
-      #     role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
-      #     aws-region: ${{ env.AWS_REGION }}
+       - name: Configure AWS credentials with OIDC
+         uses: aws-actions/configure-aws-credentials@v1
+         with:
+           role-to-assume: arn:aws:iam::445567090747:role/github-actions-cloudmart
+           aws-region: ${{ env.AWS_REGION }}
       
       - name: Login to Amazon ECR Public
         id: login-ecr-public
