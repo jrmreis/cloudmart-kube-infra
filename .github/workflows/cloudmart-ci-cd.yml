@@ -36,7 +36,7 @@ jobs:
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v1
         with:
-           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+           role-to-assume: arn:aws:iam::445567090747:role/github-actions-cloudmart
            aws-region: ${{ env.AWS_REGION }}
       
       - name: Login to Amazon ECR Public
