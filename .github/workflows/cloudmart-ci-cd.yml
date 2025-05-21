@@ -14,79 +14,74 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Login to Amazon ECR Public
-      id: login-ecr-public
-      run: |
-        aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l4c0j8h9
-
-    - name: Build, tag, and push image to Amazon ECR
-      id: build-image
-      run: |
-        # Build a docker container and push it to ECR
-        TIMESTAMP=$(date +%s)
-        COMMIT_SHA=${GITHUB_SHA::8}
-        IMAGE_TAG="${TIMESTAMP}-${COMMIT_SHA}"
+      - name: Checkout code
+        uses: actions/checkout@v3
         
-        docker build -t ${{ env.ECR_REPOSITORY }}:latest .
-        docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-        
-        docker push ${{ env.ECR_REPOSITORY }}:latest
-        docker push ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-        
-        echo "::set-output name=image::${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        run: |
+          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l4c0j8h9
+          
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        run: |
+          # Build a docker container and push it to ECR
+          TIMESTAMP=$(date +%s)
+          COMMIT_SHA=${GITHUB_SHA::8}
+          IMAGE_TAG="${TIMESTAMP}-${COMMIT_SHA}"
+          docker build -t ${{ env.ECR_REPOSITORY }}:latest .
+          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker push ${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          echo "::set-output name=image::${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"
+          
+      - name: Save Kubernetes deployment file
+        run: |
+          sed -i "s|CONTAINER_IMAGE|${{ steps.build-image.outputs.image }}|g" cloudmart-frontend.yaml
+          cp cloudmart-frontend.yaml /tmp/cloudmart-frontend.yaml
+          
+      - name: Upload Kubernetes deployment file
+        uses: actions/upload-artifact@v3
+        with:
+          name: k8s-deployment-file
+          path: /tmp/cloudmart-frontend.yaml
 
-    - name: Save Kubernetes deployment file
-      run: |
-        sed -i "s|CONTAINER_IMAGE|${{ steps.build-image.outputs.image }}|g" cloudmart-frontend.yaml
-        cp cloudmart-frontend.yaml /tmp/cloudmart-frontend.yaml
-
-    - name: Upload Kubernetes deployment file
-      uses: actions/upload-artifact@v2
-      with:
-        name: k8s-deployment-file
-        path: /tmp/cloudmart-frontend.yaml
-        
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-        
-    - name: Download Kubernetes deployment file
-      uses: actions/download-artifact@v2
-      with:
-        name: k8s-deployment-file
-        path: /tmp
-        
-    - name: Install kubectl
-      run: |
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
-        
-    - name: Update kubeconfig
-      run: |
-        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-        
-    - name: Deploy to Kubernetes
-      run: |
-        kubectl apply -f /tmp/cloudmart-frontend.yaml
-        kubectl get services
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Download Kubernetes deployment file
+        uses: actions/download-artifact@v3
+        with:
+          name: k8s-deployment-file
+          path: /tmp
+          
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f /tmp/cloudmart-frontend.yaml
+          kubectl get services
