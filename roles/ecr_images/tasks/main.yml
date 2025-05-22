@@ -1,85 +1,207 @@
 ---
-- name: Check if backend ECR repository exists
-  shell: aws ecr describe-repositories --repository-names {{ ecr_backend_repo }} --region {{ aws_region }} || echo "NOT_EXISTS"
-  register: backend_repo_exists
-  changed_when: false
-  ignore_errors: yes
-
-- name: Create backend ECR repository if it doesn't exist
-  shell: aws ecr create-repository --repository-name {{ ecr_backend_repo }} --region {{ aws_region }}
-  when: '"NOT_EXISTS" in backend_repo_exists.stdout'
-
-- name: Check if frontend ECR repository exists
-  shell: aws ecr describe-repositories --repository-names {{ ecr_frontend_repo }} --region {{ aws_region }} || echo "NOT_EXISTS"
-  register: frontend_repo_exists
-  changed_when: false
-  ignore_errors: yes
-
-- name: Create frontend ECR repository if it doesn't exist
-  shell: aws ecr create-repository --repository-name {{ ecr_frontend_repo }} --region {{ aws_region }}
-  when: '"NOT_EXISTS" in frontend_repo_exists.stdout'
-
+# ECR Repository Management
 - name: Get AWS account ID
   shell: aws sts get-caller-identity --query Account --output text
-  register: aws_account_id
+  register: aws_account_result
   changed_when: false
+  tags: [ecr, setup]
+
+- name: Set AWS account ID fact
+  set_fact:
+    aws_account_id: "{{ aws_account_result.stdout }}"
+  tags: [ecr, setup]
+
+- name: Check if ECR repositories exist
+  shell: |
+    aws ecr describe-repositories --repository-names {{ item }} --region {{ aws_region }} 2>/dev/null || echo "NOT_EXISTS"
+  register: ecr_repo_check
+  changed_when: false
+  ignore_errors: yes
+  loop:
+    - "{{ ecr_backend_repo }}"
+    - "{{ ecr_frontend_repo }}"
+  tags: [ecr, repositories]
+
+- name: Create ECR repositories if they don't exist
+  shell: |
+    aws ecr create-repository --repository-name {{ item.item }} --region {{ aws_region }}
+  when: '"NOT_EXISTS" in item.stdout'
+  loop: "{{ ecr_repo_check.results }}"
+  tags: [ecr, repositories]
+
+- name: Set lifecycle policy for ECR repositories
+  shell: |
+    aws ecr put-lifecycle-policy --repository-name {{ item }} --region {{ aws_region }} --lifecycle-policy-text '{
+      "rules": [
+        {
+          "rulePriority": 1,
+          "description": "Keep last 10 images",
+          "selection": {
+            "tagStatus": "untagged",
+            "countType": "imageCountMoreThan",
+            "countNumber": 10
+          },
+          "action": {
+            "type": "expire"
+          }
+        }
+      ]
+    }'
+  loop:
+    - "{{ ecr_backend_repo }}"
+    - "{{ ecr_frontend_repo }}"
+  ignore_errors: yes
+  tags: [ecr, repositories]
+
+# Backend Image Build
+- name: Create backend build directory
+  file:
+    path: "{{ app_backend_dir }}"
+    state: directory
+    mode: '0755'
+  tags: [backend, build]
 
 - name: Create backend Dockerfile from template
   template:
     src: Dockerfile.backend.j2
     dest: "{{ app_backend_dir }}/Dockerfile"
     mode: '0644'
+    backup: yes
+  register: backend_dockerfile
+  tags: [backend, build]
 
 - name: Create backend .env file
-  copy:
+  template:
+    src: backend.env.j2
     dest: "{{ app_backend_dir }}/.env"
-    content: |
-      PORT=5000
-      AWS_REGION={{ aws_region }}
-      BEDROCK_AGENT_ID={{ app_bedrock_agent_id }}
-      BEDROCK_AGENT_ALIAS_ID={{ app_bedrock_agent_alias_id }}
-      OPENAI_API_KEY={{ app_openai_api_key }}
-      OPENAI_ASSISTANT_ID={{ app_openai_assistant_id }}
     mode: '0600'
+    backup: yes
+  register: backend_env
+  tags: [backend, build]
 
 - name: Login to ECR
-  shell: aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com
-  args:
-    executable: /bin/bash
+  shell: |
+    aws ecr get-login-password --region {{ aws_region }} | \
+    docker login --username AWS --password-stdin {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com
+  environment:
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+  register: ecr_login
+  changed_when: "'Login Succeeded' in ecr_login.stdout"
+  tags: [ecr, login]
 
-- name: Build and push backend image
+- name: Check if backend image needs rebuilding
+  set_fact:
+    rebuild_backend: "{{ backend_dockerfile.changed or backend_env.changed or force_rebuild | default(false) }}"
+  tags: [backend, build]
+
+- name: Build backend Docker image
   shell: |
     cd {{ app_backend_dir }}
-    docker build -t {{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:latest .
-    docker push {{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:latest
-  args:
-    executable: /bin/bash
+    docker build {% if docker_build_no_cache | default(false) %}--no-cache{% endif %} \
+      -t {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:{{ backend_image_tag | default('latest') }} .
+  when: rebuild_backend | bool
+  register: backend_build_result
+  tags: [backend, build]
 
-- name: Wait for backend service to be available and get its public URL
-  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo ""
-  register: backend_lb
-  until: backend_lb.stdout | length > 0
-  retries: 3
-  delay: 5
+- name: Push backend image to ECR
+  shell: |
+    docker push {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:{{ backend_image_tag | default('latest') }}
+  when: rebuild_backend | bool
+  tags: [backend, push]
+
+# Wait for backend service (if needed for frontend build)
+- name: Wait for backend service LoadBalancer
+  shell: |
+    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo ""
+  register: backend_service_check
+  until: backend_service_check.stdout | length > 0
+  retries: 10
+  delay: 30
+  when: wait_for_backend_service | default(true)
   ignore_errors: yes
+  tags: [backend, service]
+
+- name: Get backend service endpoint
+  set_fact:
+    backend_endpoint: "{{ backend_service_check.stdout | default('') }}"
+  when: 
+    - wait_for_backend_service | default(true)
+    - backend_service_check is defined
+    - backend_service_check.stdout is defined
+  tags: [backend, service]
+
+# Frontend Image Build
+- name: Create frontend build directory
+  file:
+    path: "{{ app_frontend_dir }}"
+    state: directory
+    mode: '0755'
+  tags: [frontend, build]
+
+- name: Create nginx.conf from template
+  template:
+    src: nginx.frontend.conf.j2
+    dest: "{{ app_frontend_dir }}/nginx.conf"
+    mode: '0644'
+    backup: yes
+  register: frontend_nginx
+  tags: [frontend, build]
 
 - name: Create frontend Dockerfile from template
   template:
     src: Dockerfile.frontend.j2
     dest: "{{ app_frontend_dir }}/Dockerfile"
     mode: '0644'
+    backup: yes
+  register: frontend_dockerfile
+  tags: [frontend, build]
 
-- name: Create frontend .env file with backend endpoint
-  copy:
+- name: Create frontend .env file
+  template:
+    src: frontend.env.j2
     dest: "{{ app_frontend_dir }}/.env"
-    content: |
-      VITE_API_BASE_URL=http://cloudmart-backend-app-service.default.svc.cluster.local:5000/api
     mode: '0644'
+    backup: yes
+  vars:
+    api_base_url: "{{ backend_endpoint | default('') }}"
+  register: frontend_env
+  tags: [frontend, build]
 
-- name: Build and push frontend image
+- name: Check if frontend image needs rebuilding
+  set_fact:
+    rebuild_frontend: "{{ frontend_dockerfile.changed or frontend_env.changed or force_rebuild | default(false) }}"
+  tags: [frontend, build]
+
+- name: Build frontend Docker image
   shell: |
     cd {{ app_frontend_dir }}
-    docker build -t {{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:latest .
-    docker push {{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:latest
-  args:
-    executable: /bin/bash
+    docker build {% if docker_build_no_cache | default(false) %}--no-cache{% endif %} \
+      -t {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:{{ frontend_image_tag | default('latest') }} .
+  when: rebuild_frontend | bool
+  register: frontend_build_result
+  tags: [frontend, build]
+
+- name: Push frontend image to ECR
+  shell: |
+    docker push {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:{{ frontend_image_tag | default('latest') }}
+  when: rebuild_frontend | bool
+  tags: [frontend, push]
+
+# Cleanup old images (optional)
+- name: Remove dangling Docker images
+  shell: |
+    docker image prune -f
+  when: cleanup_old_images | default(false)
+  tags: [cleanup]
+
+- name: Show deployment summary
+  debug:
+    msg:
+      - "=== ECR Deployment Summary ==="
+      - "AWS Account ID: {{ aws_account_id }}"
+      - "AWS Region: {{ aws_region }}"
+      - "Backend Image: {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_backend_repo }}:{{ backend_image_tag | default('latest') }}"
+      - "Frontend Image: {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:{{ frontend_image_tag | default('latest') }}"
+      - "Backend rebuilt: {{ rebuild_backend | default(false) }}"
+      - "Frontend rebuilt: {{ rebuild_frontend | default(false) }}"
+  tags: [ecr, always]

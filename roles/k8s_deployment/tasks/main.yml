@@ -37,42 +37,63 @@
 
 - name: Wait for backend deployment to be available
   shell: |
-    kubectl rollout status deployment/cloudmart-backend-app --timeout=120s
+    kubectl rollout status deployment/cloudmart-backend-app --timeout=300s
   register: backend_status
-  retries: 3
-  delay: 10
+  retries: 5
+  delay: 30
   until: backend_status.rc == 0
-  ignore_errors: yes
 
-- name: Wait for backend service to get external IP
+- name: Wait for backend service to get external IP/hostname
   shell: |
-    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_url
-  until: backend_url.stdout != ""
-  retries: 15
-  delay: 20
-  ignore_errors: yes
+    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}'
+  register: backend_external_endpoint
+  until: backend_external_endpoint.stdout != ""
+  retries: 20
+  delay: 30
+  failed_when: false
 
-- name: Get backend service URL
-  command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_service_url_raw
-  changed_when: false
-
-- name: Set actual backend URL if load balancer ready
+- name: Set backend service URL
   set_fact:
-    backend_service_url: "{{ backend_service_url_raw.stdout }}"
-  when: backend_service_url_raw.stdout != ""
+    backend_service_url: "{{ backend_external_endpoint.stdout }}"
+  when: backend_external_endpoint.stdout != ""
 
-- name: Set frontend environment file path
-  set_fact:
-    frontend_env_file_path: "/tmp/frontend.env"
+- name: Fallback to NodePort if LoadBalancer not ready
+  block:
+    - name: Get node IP for NodePort fallback
+      shell: kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}'
+      register: node_external_ip
+      when: backend_service_url is not defined or backend_service_url == ""
 
-- name: Create frontend .env file with backend endpoint
-  template:
-    src: frontend-env.j2
-    dest: "/tmp/frontend.env"
-  vars:
-    backend_url: "http://{{ backend_service_url }}:5000/api"
+    - name: Get NodePort for backend service
+      shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.spec.ports[0].nodePort}'
+      register: backend_nodeport
+      when: backend_service_url is not defined or backend_service_url == ""
+
+    - name: Set NodePort URL as fallback
+      set_fact:
+        backend_service_url: "{{ node_external_ip.stdout }}:{{ backend_nodeport.stdout }}"
+      when: 
+        - backend_service_url is not defined or backend_service_url == ""
+        - node_external_ip.stdout != ""
+        - backend_nodeport.stdout != ""
+  when: backend_service_url is not defined or backend_service_url == ""
+
+- name: Debug backend URL
+  debug:
+    msg: "Backend URL will be: http://{{ backend_service_url }}:5000/api"
+  when: backend_service_url is defined
+
+- name: Create frontend environment ConfigMap with external backend URL
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: frontend-env-config
+        namespace: default
+      data:
+        .env: "VITE_API_BASE_URL=http://{{ backend_service_url | default('localhost') }}:5000/api"
 
 - name: Create frontend Kubernetes deployment file
   template:
@@ -86,26 +107,41 @@
     backend_service_port: "5000"
     frontend_service_type: "LoadBalancer"
     frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region | default('us-east-1') }}.amazonaws.com/cloudmart-frontend"
-    k8s_namespace: "default"  # Explicit namespace to avoid the conflict
+    k8s_namespace: "default"
+    backend_service_url: "{{ backend_service_url | default('') }}"
 
 - name: Apply frontend Kubernetes deployment
   shell: |
     kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
   register: frontend_deployment_result
 
-- name: Create frontend ConfigMap from env file
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: frontend-env-config
-        namespace: default
-      data:
-        .env: "VITE_API_BASE_URL=http://{% if backend_service_url|default('') != '' %}{{ backend_service_url }}{% else %}cloudmart-backend-app-service.default.svc.cluster.local{% endif %}:5000/api"
-
 - name: Display frontend deployment result
   debug:
     var: frontend_deployment_result.stdout_lines
   when: frontend_deployment_result is succeeded
+
+- name: Wait for frontend deployment to be ready
+  shell: |
+    kubectl rollout status deployment/cloudmart-frontend-app --timeout=300s
+  register: frontend_status
+  retries: 5
+  delay: 30
+  until: frontend_status.rc == 0
+
+- name: Get frontend service URL
+  shell: |
+    kubectl get svc cloudmart-frontend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}'
+  register: frontend_external_endpoint
+  until: frontend_external_endpoint.stdout != ""
+  retries: 15
+  delay: 30
+  failed_when: false
+
+- name: Display access URLs
+  debug:
+    msg: |
+      Frontend URL: http://{{ frontend_external_endpoint.stdout }}:3000
+      Backend URL: http://{{ backend_service_url }}:5000/api
+  when: 
+    - frontend_external_endpoint.stdout != ""
+    - backend_service_url is defined
