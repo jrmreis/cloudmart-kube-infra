@@ -1,171 +1,137 @@
 ---
-# Updated tasks for the k8s_deployment role
-- name: Install required Python modules for Kubernetes tasks
+# Simplified k8s_deployment role tasks
+- name: Install required Python modules
   pip:
     name:
-      - openshift
       - kubernetes
       - "urllib3==1.26.16"
     state: present
   become: yes
-  delegate_to: localhost
 
 - name: Get AWS account ID
   shell: aws sts get-caller-identity --query 'Account' --output text
   register: aws_account_id_output
+  changed_when: false
 
-- name: Set AWS account ID fact
+- name: Set facts
   set_fact:
     aws_account_id: "{{ aws_account_id_output.stdout }}"
+    aws_region: "{{ aws_region | default('us-east-1') }}"
 
-- name: Create backend Kubernetes deployment file
+- name: Create backend deployment file
   template:
     src: cloudmart-backend.yaml.j2
     dest: "{{ backend_dir }}/cloudmart-backend.yaml"
-  vars:
-    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
 
-- name: Apply backend Kubernetes deployment
-  shell: |
-    kubectl apply -f {{ backend_dir }}/cloudmart-backend.yaml
-  register: backend_deployment_result
+- name: Deploy backend to Kubernetes
+  shell: kubectl apply -f {{ backend_dir }}/cloudmart-backend.yaml
+  register: backend_deploy
 
-<<<<<<< HEAD
-- name: Wait for backend pods to be running
-  shell: kubectl get pods -l app=cloudmart-backend-app -o jsonpath='{.items[0].status.phase}'
-  register: backend_pod_status
-  until: backend_pod_status.stdout == "Running"
-  retries: 30
-  delay: 10
-  ignore_errors: yes
-
-- name: Wait for backend service LoadBalancer to get external IP
-  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_lb
-  until: backend_lb.stdout != ""
-  retries: 30
-  delay: 10
-  ignore_errors: yes
-
-- name: Get backend service URL
-  shell: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_url
-  ignore_errors: yes
-
-- name: Display backend service URL
-  debug:
-    msg: "Backend service URL: http://{{ backend_url.stdout }}:5000"
-  when: backend_url.stdout != ""
-=======
-- name: Display backend deployment result
-  debug:
-    var: backend_deployment_result.stdout_lines
-  when: backend_deployment_result is succeeded
-
-- name: Wait for backend deployment to be available
-  shell: |
-    kubectl rollout status deployment/cloudmart-backend-app --timeout=120s
-  register: backend_status
+- name: Wait for backend deployment
+  shell: kubectl rollout status deployment/cloudmart-backend-app --timeout=300s
   retries: 3
   delay: 10
-  until: backend_status.rc == 0
-  ignore_errors: yes
 
-- name: Wait for backend service to get external IP
+- name: Wait for backend service (with timeout)
   shell: |
-    kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_url
-  until: backend_url.stdout != ""
-  retries: 15
-  delay: 20
-  ignore_errors: yes
-
-- name: Get backend service URL
-  command: kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: backend_service_url_raw
+    for i in {1..10}; do
+      URL=$(kubectl get svc cloudmart-backend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+      if [ -n "$URL" ]; then
+        echo "$URL"
+        exit 0
+      fi
+      echo "Waiting for backend service... attempt $i/10"
+      sleep 30
+    done
+    echo "TIMEOUT"
+  register: backend_endpoint
   changed_when: false
 
-- name: Set actual backend URL if load balancer ready
+- name: Set backend URL
   set_fact:
-    backend_service_url: "{{ backend_service_url_raw.stdout }}"
-  when: backend_service_url_raw.stdout != ""
+    backend_url: "{{ backend_endpoint.stdout if backend_endpoint.stdout != 'TIMEOUT' and backend_endpoint.stdout != '' else 'localhost' }}"
 
-- name: Set frontend environment file path
-  set_fact:
-    frontend_env_file_path: "/tmp/frontend.env"
-
-- name: Create frontend .env file with backend endpoint
-  template:
-    src: frontend-env.j2
-    dest: "/tmp/frontend.env"
-  vars:
-    backend_url: "http://{{ backend_service_url }}:5000/api"
->>>>>>> dev
-
-- name: Create frontend Kubernetes deployment file
+- name: Create frontend deployment file
   template:
     src: cloudmart-frontend.yaml.j2
     dest: "{{ frontend_dir }}/cloudmart-frontend.yaml"
   vars:
-<<<<<<< HEAD
-    aws_account_id: "{{ aws_account_id.stdout }}"
-=======
     frontend_app_name: "cloudmart-frontend-app"
-    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    backend_api_url: "http://{{ backend_url }}:5000/api"
+    frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/cloudmart-frontend"
     frontend_version: "latest"
-    backend_service_name: "cloudmart-backend-app-service"
-    backend_service_port: "5000"
     frontend_service_type: "LoadBalancer"
-    frontend_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_region | default('us-east-1') }}.amazonaws.com/cloudmart-frontend"
-    k8s_namespace: "default"  # Explicit namespace to avoid the conflict
->>>>>>> dev
+    k8s_namespace: "default"
 
-- name: Apply frontend Kubernetes deployment
-  shell: |
-    kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
-  register: frontend_deployment_result
+- name: Deploy frontend to Kubernetes
+  shell: kubectl apply -f {{ frontend_dir }}/cloudmart-frontend.yaml
+  register: frontend_deploy
 
-<<<<<<< HEAD
-- name: Wait for frontend pods to be running
-  shell: kubectl get pods -l app=cloudmart-frontend-app -o jsonpath='{.items[0].status.phase}'
-  register: frontend_pod_status
-  until: frontend_pod_status.stdout == "Running"
-  retries: 30
+- name: Wait for frontend deployment
+  shell: kubectl rollout status deployment/cloudmart-frontend-app --timeout=300s
+  retries: 1
   delay: 10
-  ignore_errors: yes
+  register: frontend_rollout
+  failed_when: false
+
+- name: Debug frontend deployment if failed
+  block:
+    - name: Get pod status
+      shell: kubectl get pods -l app=cloudmart-frontend-app -o wide
+      register: pod_status
+
+    - name: Get pod logs
+      shell: kubectl logs -l app=cloudmart-frontend-app --tail=50
+      register: pod_logs
+      failed_when: false
+
+    - name: Get deployment description
+      shell: kubectl describe deployment cloudmart-frontend-app
+      register: deployment_desc
+
+    - name: Display debugging info
+      debug:
+        msg: |
+          Frontend deployment failed. Debug info:
+          
+          Pod Status:
+          {{ pod_status.stdout }}
+          
+          Pod Logs:
+          {{ pod_logs.stdout }}
+          
+          Deployment Description:
+          {{ deployment_desc.stdout }}
+
+    - name: Fail with clear message
+      fail:
+        msg: "Frontend deployment failed. Check the debug output above for details."
+  when: frontend_rollout.rc != 0
 
 - name: Get frontend service URL
-  shell: kubectl get svc cloudmart-frontend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: frontend_url
-  ignore_errors: yes
+  shell: |
+    for i in {1..10}; do
+      URL=$(kubectl get svc cloudmart-frontend-app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+      if [ -n "$URL" ]; then
+        echo "$URL"
+        exit 0
+      fi
+      echo "Waiting for frontend service... attempt $i/10"
+      sleep 30
+    done
+    echo "Check 'kubectl get svc' for service status"
+  register: frontend_endpoint
+  changed_when: false
+  failed_when: false
 
-- name: Display frontend service URL
+- name: Display deployment results
   debug:
-    msg: "Frontend service URL: http://{{ frontend_url.stdout }}:5001"
-  when: frontend_url.stdout != ""
-
-- name: Kubernetes deployment summary
-  debug:
-    msg: 
-      - "Kubernetes deployment completed"
-      - "Check deployments with: kubectl get deployments"
-      - "Check services with: kubectl get services"
-      - "Check pods with: kubectl get pods"
-=======
-- name: Create frontend ConfigMap from env file
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: frontend-env-config
-        namespace: default
-      data:
-        .env: "VITE_API_BASE_URL=http://{% if backend_service_url|default('') != '' %}{{ backend_service_url }}{% else %}cloudmart-backend-app-service.default.svc.cluster.local{% endif %}:5000/api"
-
-- name: Display frontend deployment result
-  debug:
-    var: frontend_deployment_result.stdout_lines
-  when: frontend_deployment_result is succeeded
->>>>>>> dev
+    msg: |
+      Deployment completed!
+      Backend URL: http://{{ backend_url }}:5000/api
+      Frontend URL: http://{{ frontend_endpoint.stdout }}:5001 (if LoadBalancer ready)
+      
+      Manual check commands:
+      - kubectl get pods
+      - kubectl get svc
+      - kubectl get deployments

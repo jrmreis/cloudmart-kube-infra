@@ -1,0 +1,25 @@
+---
+# ECR Configuration
+ecr_backend_repo: "cloudmart-backend"
+ecr_frontend_repo: "cloudmart-frontend"
+
+# Image tags
+backend_image_tag: "latest"
+frontend_image_tag: "latest"
+
+# Build configuration
+docker_build_no_cache: false
+cleanup_old_images: false
+
+# Application directories
+app_backend_dir: "/tmp/cloudmart-backend"
+app_frontend_dir: "/tmp/cloudmart-frontend"
+
+# Backend configuration
+app_backend_port: 5000
+app_environment: "production"
+app_log_level: "info"
+
+# Service configuration
+wait_for_backend_service: false
+k8s_namespace: "default"

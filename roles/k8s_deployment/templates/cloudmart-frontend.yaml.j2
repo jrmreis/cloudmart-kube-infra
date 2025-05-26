@@ -1,74 +1,44 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ frontend_app_name }}
-  namespace: "{{ k8s_namespace | default('default') }}"
-  labels:
-    app: {{ frontend_app_name }}
+  name: cloudmart-frontend-app
 spec:
-  replicas: {{ frontend_replicas | default('1') }}
+  replicas: {{ frontend_replicas }}
   selector:
     matchLabels:
-      app: {{ frontend_app_name }}
+      app: cloudmart-frontend-app
   template:
     metadata:
       labels:
-        app: {{ frontend_app_name }}
+        app: cloudmart-frontend-app
     spec:
-      volumes:
-      - name: env-config
-        configMap:
-          name: frontend-env-config
+      serviceAccountName: {{ k8s_service_account_name }}
       containers:
-      - name: frontend
-        image: {{ frontend_image }}:{{ frontend_version | default('latest') }}
-        resources:
-          limits:
-            memory: {{ frontend_memory_limit | default('512Mi') }}
-            cpu: {{ frontend_cpu_limit | default('500m') }}
-          requests:
-            memory: {{ frontend_memory_request | default('256Mi') }}
-            cpu: {{ frontend_cpu_request | default('250m') }}
+      - name: cloudmart-frontend-app
+        image: {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_frontend_repo }}:latest
         ports:
-        - containerPort: {{ frontend_port | default('5001') }}
-          name: http
-        volumeMounts:
-        - name: env-config
-          mountPath: /app/.env
-          subPath: .env
-        readinessProbe:
-          httpGet:
-            path: /
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /
-            port: http
-          initialDelaySeconds: 15
-          periodSeconds: 15
+        - containerPort: 5001
+
 ---
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-env-config
-  namespace: "{{ k8s_namespace | default('default') }}"
+  namespace: default
 data:
-  .env: |
-    VITE_API_BASE_URL=http://{{ backend_service_name }}.{{ k8s_namespace | default('default') }}.svc.cluster.local:{{ backend_service_port | default('5000') }}/api
+  .env: "VITE_API_BASE_URL=http://{{ backend_url }}:5000/api"
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ frontend_app_name }}
-  namespace: "{{ k8s_namespace | default('default') }}"
+  name: cloudmart-frontend-app-service
 spec:
-  type: {{ frontend_service_type | default('ClusterIP') }}
-  ports:
-  - port: {{ frontend_service_port | default('5001') }}
-    targetPort: {{ frontend_port | default('5001') }}
-    protocol: TCP
-    name: http
+  type: LoadBalancer
   selector:
-    app: {{ frontend_app_name }}
+    app: cloudmart-frontend-app
+  ports:
+    - protocol: TCP
+      port: 5001
+      targetPort: 5001
