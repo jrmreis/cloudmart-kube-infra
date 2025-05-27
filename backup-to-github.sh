@@ -17,7 +17,7 @@ LOG_FILE="${LOG_DIR}/github-backup-${TIMESTAMP}.log"
 # GitHub Configuration - EDIT THESE
 GITHUB_REPO_URL="https://github.com/jrmreis/bkp_dina_db.git"  # Your GitHub repo
 GITHUB_USERNAME="jrmreis"  # Your GitHub username
-GITHUB_EMAIL="jrmreis@gmail.com"  # Your email
+GITHUB_EMAIL="your-email@example.com"  # Your email
 BACKUP_REPO_DIR="/home/ec2-user/dynamodb-backup-repo"
 
 # Colors for output
@@ -217,11 +217,28 @@ import sys
 from decimal import Decimal
 from datetime import datetime
 
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
+def convert_to_dynamodb_format(item):
+    """Convert a regular item to DynamoDB JSON format with proper type descriptors"""
+    def convert_value(value):
+        if isinstance(value, str):
+            return {'S': value}
+        elif isinstance(value, Decimal):
+            return {'N': str(value)}
+        elif isinstance(value, (int, float)):
+            return {'N': str(value)}
+        elif isinstance(value, bool):
+            return {'BOOL': value}
+        elif isinstance(value, list):
+            return {'L': [convert_value(v) for v in value]}
+        elif isinstance(value, dict):
+            return {'M': {k: convert_value(v) for k, v in value.items()}}
+        elif value is None:
+            return {'NULL': True}
+        else:
+            # Convert any other type to string
+            return {'S': str(value)}
+    
+    return {k: convert_value(v) for k, v in item.items()}
 
 def export_table(table_name, output_file, region):
     try:
@@ -238,21 +255,45 @@ def export_table(table_name, output_file, region):
             response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
             items.extend(response['Items'])
         
-        # Create batch write format for easy restore
         if items:
+            print(f"Converting {len(items)} items to DynamoDB format...")
+            
+            # Convert items to proper DynamoDB format
+            dynamodb_items = []
+            for item in items:
+                dynamodb_item = convert_to_dynamodb_format(item)
+                dynamodb_items.append({'PutRequest': {'Item': dynamodb_item}})
+            
+            # Create batch write format for CLI restore
             batch_write_format = {
-                table_name: [
-                    {'PutRequest': {'Item': item}} for item in items
-                ]
+                table_name: dynamodb_items
             }
             
             with open(output_file, 'w') as f:
-                json.dump(batch_write_format, f, cls=DecimalEncoder, indent=2)
+                json.dump(batch_write_format, f, indent=2, default=str)
             
-            print(f"Exported {len(items)} items to {output_file}")
+            # Also create a console-friendly format for manual import
+            console_file = output_file.replace('.json', '-console.json')
+            console_items = []
+            for item in items:
+                console_items.append(convert_to_dynamodb_format(item))
+            
+            with open(console_file, 'w') as f:
+                json.dump(console_items, f, indent=2, default=str)
+            
+            print(f"✅ Exported {len(items)} items to {output_file}")
+            print(f"📋 Console format saved to {console_file}")
             return len(items)
         else:
             print(f"Table {table_name} is empty")
+            # Create empty structures
+            batch_write_format = {table_name: []}
+            with open(output_file, 'w') as f:
+                json.dump(batch_write_format, f, indent=2)
+            
+            console_file = output_file.replace('.json', '-console.json')
+            with open(console_file, 'w') as f:
+                json.dump([], f, indent=2)
             return 0
         
     except Exception as e:
@@ -356,20 +397,44 @@ $(echo -e "$backup_summary")
 - \`${archive_name}\` - Compressed backup archive
 $(for table in "${TABLES[@]}"; do
     if [ -f "${backup_dir}/${table}.json" ]; then
-        echo "- \`${table}.json\` - Individual table backup"
+        echo "- \`${table}.json\` - CLI batch-write format"
+        echo "- \`${table}-console.json\` - AWS Console format"
     fi
 done)
 
-## Restore Command
+## Restore Instructions
 
+### Method 1: AWS CLI (Automated)
 \`\`\`bash
-# Extract archive
+# Extract archive if needed
 tar -xzf ${archive_name}
 
-# Restore tables (ensure tables exist first)
+# Restore using AWS CLI
 $(for table in "${TABLES[@]}"; do
-    echo "aws dynamodb batch-write-item --request-items file://${table}.json"
+    echo "aws dynamodb batch-write-item --request-items file://${table}.json --region ${AWS_REGION}"
 done)
+\`\`\`
+
+### Method 2: AWS Console (Manual)
+1. Go to AWS Console → DynamoDB → Tables → [table-name]
+2. Click "Explore table items" → "Create item"
+3. Switch to "JSON view"
+4. Copy individual items from \`${table}-console.json\` files
+5. Paste each item and click "Create item"
+
+### Method 3: GitHub Restore Script
+\`\`\`bash
+./backup-to-github.sh restore ${DATE_ONLY}
+\`\`\`
+
+## Sample Console Format
+Each item in the \`*-console.json\` files is formatted like this:
+\`\`\`json
+{
+  "id": {"S": "example-id"},
+  "name": {"S": "Product Name"},
+  "price": {"N": "19.99"}
+}
 \`\`\`
 EOF
     
@@ -438,30 +503,57 @@ restore_from_github() {
         local json_file="${table_name}.json"
         if [ -f "$json_file" ]; then
             log "INFO" "Restoring table $table_name from $backup_date"
-            if aws dynamodb batch-write-item --request-items "file://$json_file" --region "$AWS_REGION"; then
-                log "SUCCESS" "Table $table_name restored successfully"
+            
+            # Try CLI restore first
+            if aws dynamodb batch-write-item --request-items "file://$json_file" --region "$AWS_REGION" 2>/dev/null; then
+                log "SUCCESS" "Table $table_name restored successfully using CLI"
+                
+                # Verify restore
+                local count=$(aws dynamodb scan --table-name "$table_name" --select COUNT --region "$AWS_REGION" --query 'Count' --output text 2>/dev/null || echo "0")
+                log "INFO" "Verified: $count items in $table_name"
             else
-                log "ERROR" "Failed to restore table $table_name"
+                log "WARNING" "CLI restore failed for $table_name"
+                log "INFO" "Manual restore options:"
+                log "INFO" "1. Use console format file: ${table_name}-console.json"
+                log "INFO" "2. AWS Console → DynamoDB → Tables → $table_name → Create item"
+                log "INFO" "3. Copy individual items from ${table_name}-console.json"
             fi
         else
             log "ERROR" "Backup file not found: $json_file"
+            log "INFO" "Available files in backup:"
+            ls -la | grep "\.json"
         fi
     else
         # Restore all tables
         log "INFO" "Restoring all CloudMart tables from $backup_date"
+        local success_count=0
+        
         for table in "${TABLES[@]}"; do
             local json_file="${table}.json"
             if [ -f "$json_file" ]; then
                 log "INFO" "Restoring table $table"
-                if aws dynamodb batch-write-item --request-items "file://$json_file" --region "$AWS_REGION"; then
+                
+                if aws dynamodb batch-write-item --request-items "file://$json_file" --region "$AWS_REGION" 2>/dev/null; then
                     log "SUCCESS" "Table $table restored successfully"
+                    success_count=$((success_count + 1))
+                    
+                    # Verify restore
+                    local count=$(aws dynamodb scan --table-name "$table" --select COUNT --region "$AWS_REGION" --query 'Count' --output text 2>/dev/null || echo "0")
+                    log "INFO" "Verified: $count items in $table"
                 else
-                    log "ERROR" "Failed to restore table $table"
+                    log "WARNING" "Failed to restore table $table using CLI"
+                    log "INFO" "Manual restore file available: ${table}-console.json"
                 fi
             else
                 log "WARNING" "Backup file not found for table: $table"
             fi
         done
+        
+        log "INFO" "Restoration summary: $success_count/${#TABLES[@]} tables restored automatically"
+        if [ $success_count -lt ${#TABLES[@]} ]; then
+            log "INFO" "For failed tables, use manual restore with *-console.json files"
+            log "INFO" "Console restore: AWS Console → DynamoDB → Tables → [table] → Create item"
+        fi
     fi
 }
 
