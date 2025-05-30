@@ -14,12 +14,12 @@ AWS_SECRET_ACCESS_KEY={{ aws_secret_access_key }}
 {% endif %}
 
 # Bedrock Configuration
-BEDROCK_AGENT_ID={{ app_bedrock_agent_id }}
-BEDROCK_AGENT_ALIAS_ID={{ app_bedrock_agent_alias_id }}
+BEDROCK_AGENT_ID=${{ secrets.BEDROCK_AGENT_ID }}
+BEDROCK_AGENT_ALIAS_ID=${{ secrets.BEDROCK_AGENT_ALIAS_ID }}
 
 # OpenAI Configuration
-OPENAI_API_KEY={{ app_openai_api_key }}
-OPENAI_ASSISTANT_ID={{ app_openai_assistant_id }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+OPENAI_ASSISTANT_ID=${{ secrets.OPENAI_ASSISTANT_ID }}
 
 # Database Configuration (if applicable)
 {% if database_url is defined %}
