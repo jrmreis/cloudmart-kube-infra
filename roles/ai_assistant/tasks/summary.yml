@@ -1,0 +1,91 @@
+# roles/ai-assistant/tasks/summary.yml
+---
+- name: Gather deployment statistics
+  set_fact:
+    deployment_stats:
+      project: "{{ project_name }}"
+      environment: "{{ environment }}"
+      region: "{{ aws_region }}"
+      tables_created: "{{ dynamodb_table_results.results | map(attribute='table.table_name') | list }}"
+      functions_deployed: "{{ lambda_function_results.results | selectattr('invocation', 'defined') | map(attribute='invocation.function_name') | list }}"
+      iam_role: "{{ lambda_role_result.arn | default('N/A') }}"
+      bedrock_enabled: "{{ bedrock_enabled }}"
+      event_mapping: "{{ ai_assistant_event_mapping_uuid | default('N/A') }}"
+
+- name: Display comprehensive deployment summary
+  debug:
+    msg:
+      - "╔══════════════════════════════════════════════════════════════╗"
+      - "║                CloudMart AI Assistant Deployment            ║"
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Status: ✅ DEPLOYMENT COMPLETED SUCCESSFULLY                ║"
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Configuration:                                               ║"
+      - "║   Project: {{ deployment_stats.project | ljust(52) }}║"
+      - "║   Environment: {{ deployment_stats.environment | ljust(48) }}║"
+      - "║   Region: {{ deployment_stats.region | ljust(49) }}║"
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Infrastructure Deployed:                                     ║"
+      - "║   📊 DynamoDB Tables: {{ deployment_stats.tables_created | length | string | ljust(40) }}║"
+      - "║   ⚡ Lambda Functions: {{ deployment_stats.functions_deployed | length | string | ljust(39) }}║"
+      - "║   🔐 IAM Resources: Configured                               ║"
+      - "║   📈 CloudWatch: Monitoring enabled                         ║"
+      - "║   🤖 Bedrock Integration: {{ ('Enabled' if deployment_stats.bedrock_enabled else 'Disabled') | ljust(33) }}║"
+      - "║   🔄 Stream Processing: {{ ('Configured' if deployment_stats.event_mapping != 'N/A' else 'Not configured') | ljust(35) }}║"
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Resources Created:                                           ║"
+
+- name: Display DynamoDB tables
+  debug:
+    msg: "║   📊 {{ item | ljust(56) }}║"
+  loop: "{{ deployment_stats.tables_created }}"
+
+- name: Display Lambda functions
+  debug:
+    msg: "║   ⚡ {{ item | ljust(56) }}║"
+  loop: "{{ deployment_stats.functions_deployed }}"
+
+- name: Display final summary
+  debug:
+    msg:
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Next Steps:                                                  ║"
+      - "║   1. Test Lambda functions via AWS Console                   ║"
+      - "║   2. Verify DynamoDB stream processing                       ║"
+      - "║   3. Configure Bedrock model access                          ║"
+      - "║   4. Set up application integration                          ║"
+      - "║   5. Monitor CloudWatch logs and metrics                     ║"
+      - "╠══════════════════════════════════════════════════════════════╣"
+      - "║ Documentation:                                               ║"
+      - "║   📖 Lambda logs: /aws/lambda/<function-name>                ║"
+      - "║   📈 Metrics: CloudWatch → Lambda/DynamoDB dashboards       ║"
+      - "║   🔍 Troubleshooting: Check CloudWatch logs for errors      ║"
+      - "╚══════════════════════════════════════════════════════════════╝"
+
+- name: Save deployment information to file
+  copy:
+    content: |
+      CloudMart AI Assistant Deployment Summary
+      =========================================
+      Timestamp: {{ ansible_date_time.iso8601 }}
+      Project: {{ deployment_stats.project }}
+      Environment: {{ deployment_stats.environment }}
+      Region: {{ deployment_stats.region }}
+      
+      DynamoDB Tables:
+      {% for table in deployment_stats.tables_created %}
+      - {{ table }}
+      {% endfor %}
+      
+      Lambda Functions:
+      {% for function in deployment_stats.functions_deployed %}
+      - {{ function }}
+      {% endfor %}
+      
+      IAM Role: {{ deployment_stats.iam_role }}
+      Bedrock Enabled: {{ deployment_stats.bedrock_enabled }}
+      Event Source Mapping: {{ deployment_stats.event_mapping }}
+      
+      Deployment completed successfully!
+    dest: "./ai-assistant-deployment-{{ deployment_stats.environment }}-{{ ansible_date_time.epoch }}.log"
+  delegate_to: localhost

@@ -1,0 +1,88 @@
+# roles/ai-assistant/defaults/main.yml
+---
+# AWS Configuration
+aws_region: "{{ cloudmart_aws_region | default('us-east-1') }}"
+project_name: "cloudmart"
+environment: "{{ cloudmart_environment | default('dev') }}"
+
+# DynamoDB Configuration
+dynamodb_tables:
+  - name: "{{ project_name }}-products-{{ environment }}"
+    hash_key_name: "id"
+    hash_key_type: "STRING"
+    billing_mode: "PAY_PER_REQUEST"
+    stream_enabled: false
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+  - name: "{{ project_name }}-orders-{{ environment }}"
+    hash_key_name: "id"
+    hash_key_type: "STRING"
+    billing_mode: "PAY_PER_REQUEST"
+    stream_enabled: true
+    stream_view_type: "NEW_AND_OLD_IMAGES"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+  - name: "{{ project_name }}-tickets-{{ environment }}"
+    hash_key_name: "id"
+    hash_key_type: "STRING"
+    billing_mode: "PAY_PER_REQUEST"
+    stream_enabled: false
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+
+# Lambda Configuration
+lambda_role_name: "{{ project_name }}-lambda-role-{{ environment }}"
+lambda_policy_name: "{{ project_name }}-lambda-policy-{{ environment }}"
+
+lambda_functions:
+  - name: "{{ project_name }}-list-products-{{ environment }}"
+    filename: "{{ lambda_artifacts_path | default('./lambda-artifacts') }}/list_products.zip"
+    handler: "index.handler"
+    runtime: "nodejs20.x"
+    timeout: 30
+    memory_size: 256
+    environment_variables:
+      PRODUCTS_TABLE: "{{ project_name }}-products-{{ environment }}"
+      AWS_REGION: "{{ aws_region }}"
+      ENVIRONMENT: "{{ environment }}"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+      Function: "list-products"
+  - name: "{{ project_name }}-dynamodb-to-bigquery-{{ environment }}"
+    filename: "{{ lambda_artifacts_path | default('./lambda-artifacts') }}/dynamodb_to_bigquery.zip"
+    handler: "index.handler"
+    runtime: "nodejs20.x"
+    timeout: 300
+    memory_size: 512
+    environment_variables:
+      GOOGLE_CLOUD_PROJECT_ID: "{{ bigquery_project_id | default('lustrous-bounty-436219-f1') }}"
+      BIGQUERY_DATASET_ID: "{{ bigquery_dataset_id | default('cloudmart') }}"
+      BIGQUERY_TABLE_ID: "{{ bigquery_table_id | default('cloudmart-orders') }}"
+      GOOGLE_APPLICATION_CREDENTIALS: "/var/task/google_credentials.json"
+      AWS_REGION: "{{ aws_region }}"
+      ENVIRONMENT: "{{ environment }}"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+      Function: "bigquery-sync"
+
+# AI/Bedrock Configuration
+bedrock_enabled: "{{ cloudmart_bedrock_enabled | default(true) }}"
+bedrock_models: "{{ cloudmart_bedrock_models | default(['claude-v2', 'claude-instant-v1']) }}"
+
+# Lambda artifacts path
+lambda_artifacts_path: "./lambda-artifacts"
+
+# BigQuery Configuration (optional)
+bigquery_project_id: "lustrous-bounty-436219-f1"
+bigquery_dataset_id: "cloudmart"
+bigquery_table_id: "cloudmart-orders"

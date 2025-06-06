@@ -1,0 +1,37 @@
+# roles/ai-assistant/tasks/cloudwatch.yml
+---
+- name: Create CloudWatch Log Groups for Lambda functions
+  amazon.aws.cloudwatchlogs_log_group:
+    log_group_name: "/aws/lambda/{{ item.name }}"
+    retention: "{{ _lambda_log_group_retention }}"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+      Function: "{{ item.name }}"
+    state: present
+  loop: "{{ lambda_functions }}"
+
+- name: Create CloudWatch dashboard for AI Assistant
+  amazon.aws.cloudwatch_metric_alarm:
+    name: "{{ project_name }}-{{ environment }}-lambda-errors"
+    metric_name: "Errors"
+    namespace: "AWS/Lambda"
+    statistic: "Sum"
+    comparison: "GreaterThanThreshold"
+    threshold: 0
+    period: 300
+    evaluation_periods: 1
+    alarm_description: "Lambda function errors for CloudMart AI Assistant"
+    dimensions:
+      FunctionName: "{{ lambda_functions[0].name }}"
+    region: "{{ aws_region }}"
+    state: present
+  when: lambda_functions | length > 0
+
+- name: Display CloudWatch resources
+  debug:
+    msg:
+      - "Log Groups created for Lambda functions"
+      - "Log Retention: {{ _lambda_log_group_retention }} days"
+      - "CloudWatch Alarms configured for error monitoring"

@@ -1,0 +1,67 @@
+# roles/ai-assistant/tasks/iam.yml
+---
+- name: Create IAM role for Lambda functions
+  amazon.aws.iam_role:
+    name: "{{ lambda_role_name }}"
+    assume_role_policy_document: "{{ _lambda_assume_role_policy }}"
+    managed_policies:
+      - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "{{ project_name }}"
+      Component: "ai-assistant"
+    state: present
+  register: lambda_role_result
+
+- name: Create IAM policy for Lambda DynamoDB access
+  amazon.aws.iam_managed_policy:
+    name: "{{ lambda_policy_name }}"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:Scan",
+              "dynamodb:Query",
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem",
+              "dynamodb:DeleteItem",
+              "dynamodb:GetRecords",
+              "dynamodb:GetShardIterator",
+              "dynamodb:DescribeStream",
+              "dynamodb:ListStreams"
+            ],
+            "Resource": [
+              {% for arn in _dynamodb_table_arns %}"{{ arn }}"{% if not loop.last %},{% endif %}{% endfor %}{% if _dynamodb_stream_arns | length > 0 %},{% for arn in _dynamodb_stream_arns %}"{{ arn }}"{% if not loop.last %},{% endif %}{% endfor %}{% endif %}
+            ]
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:{{ aws_region }}:*:*"
+          }
+        ]
+      }
+    state: present
+  register: lambda_policy_result
+
+- name: Attach custom policy to Lambda role
+  amazon.aws.iam_role:
+    name: "{{ lambda_role_name }}"
+    managed_policies:
+      - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      - "{{ lambda_policy_result.policy.arn }}"
+    state: present
+
+- name: Display IAM resources
+  debug:
+    msg:
+      - "Lambda Role ARN: {{ lambda_role_result.arn }}"
+      - "Lambda Policy ARN: {{ lambda_policy_result.policy.arn }}"

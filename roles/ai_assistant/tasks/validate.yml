@@ -1,0 +1,53 @@
+# roles/ai-assistant/tasks/validate.yml
+---
+- name: Validate required variables
+  assert:
+    that:
+      - aws_region is defined
+      - project_name is defined
+      - environment is defined
+      - dynamodb_tables is defined
+      - lambda_functions is defined
+    fail_msg: "Required variables must be defined: aws_region, project_name, environment, dynamodb_tables, lambda_functions"
+
+- name: Validate AWS region format
+  assert:
+    that:
+      - aws_region | regex_search('^[a-z]{2}-[a-z]+-[0-9]$')
+    fail_msg: "AWS region must be in format like 'us-east-1'"
+
+- name: Validate environment value
+  assert:
+    that:
+      - environment in ['dev', 'staging', 'prod', 'test']
+    fail_msg: "Environment must be one of: dev, staging, prod, test"
+
+- name: Display deployment information
+  debug:
+    msg:
+      - "Deploying CloudMart AI Assistant"
+      - "Project: {{ project_name }}"
+      - "Environment: {{ environment }}"
+      - "Region: {{ aws_region }}"
+      - "DynamoDB Tables: {{ dynamodb_tables | length }}"
+      - "Lambda Functions: {{ lambda_functions | length }}"
+      - "Bedrock Enabled: {{ bedrock_enabled }}"
+
+- name: Check if Lambda function zip files exist
+  stat:
+    path: "{{ item.filename }}"
+  loop: "{{ lambda_functions }}"
+  register: lambda_zip_files
+  delegate_to: localhost
+  failed_when: false
+
+- name: Warn about missing Lambda zip files
+  debug:
+    msg: "WARNING: Lambda zip file not found: {{ item.item.filename }}"
+  loop: "{{ lambda_zip_files.results }}"
+  when: not item.stat.exists
+  
+- name: Fail if critical Lambda files are missing
+  fail:
+    msg: "Critical Lambda zip files are missing. Please ensure all Lambda artifacts are built and available."
+  when: lambda_zip_files.results | selectattr('stat.exists', 'equalto', false) | list | length > 0

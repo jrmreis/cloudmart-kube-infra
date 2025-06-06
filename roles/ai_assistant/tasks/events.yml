@@ -1,0 +1,43 @@
+# roles/ai-assistant/tasks/events.yml
+---
+- name: Get DynamoDB orders table stream ARN
+  set_fact:
+    orders_stream_arn: "{{ dynamodb_table_results.results | selectattr('table.table_name', 'search', 'orders') | map(attribute='table.latest_stream_arn') | first | default('') }}"
+
+- name: Get BigQuery Lambda function ARN
+  set_fact:
+    bigquery_lambda_arn: "{{ lambda_function_results.results | selectattr('invocation', 'defined') | selectattr('invocation.function_name', 'search', 'bigquery') | map(attribute='invocation.function_arn') | first | default('') }}"
+
+- name: Create Lambda event source mapping for DynamoDB stream
+  amazon.aws.lambda_event_source_mapping:
+    event_source_arn: "{{ orders_stream_arn }}"
+    function_name: "{{ bigquery_lambda_arn }}"
+    starting_position: "LATEST"
+    batch_size: 10
+    maximum_batching_window_in_seconds: 5
+    maximum_record_age_in_seconds: 86400
+    bisect_batch_on_function_error: true
+    maximum_retry_attempts: 3
+    parallelization_factor: 1
+    region: "{{ aws_region }}"
+    state: present
+  when: 
+    - orders_stream_arn != ""
+    - bigquery_lambda_arn != ""
+  register: event_source_mapping_result
+
+- name: Display event source mapping information
+  debug:
+    msg:
+      - "Event Source Mapping created"
+      - "UUID: {{ event_source_mapping_result.uuid | default('N/A') }}"
+      - "Source ARN: {{ orders_stream_arn }}"
+      - "Target Function: {{ bigquery_lambda_arn }}"
+      - "Batch Size: 10"
+      - "Starting Position: LATEST"
+  when: event_source_mapping_result is defined and event_source_mapping_result.uuid is defined
+
+- name: Store event source mapping UUID for cleanup
+  set_fact:
+    ai_assistant_event_mapping_uuid: "{{ event_source_mapping_result.uuid }}"
+  when: event_source_mapping_result is defined and event_source_mapping_result.uuid is defined

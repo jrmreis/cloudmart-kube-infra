@@ -1,0 +1,56 @@
+# roles/ai-assistant/vars/main.yml
+---
+# Internal variables - do not override these
+_lambda_log_group_retention: 14
+_lambda_vpc_config: "{{ cloudmart_vpc_config | default(omit) }}"
+
+# Lambda function execution role policy document
+_lambda_assume_role_policy: |
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "lambda.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+
+# DynamoDB access policy template
+_dynamodb_policy_template: |
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:Scan",
+          "dynamodb:Query",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:DescribeStream",
+          "dynamodb:ListStreams"
+        ],
+        "Resource": [
+          "{{ _dynamodb_table_arns | join('", "') }}",
+          "{{ _dynamodb_stream_arns | join('", "') }}"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "arn:aws:logs:{{ aws_region }}:*:*"
+      }
+    ]
+  }

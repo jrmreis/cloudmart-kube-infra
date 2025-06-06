@@ -1,0 +1,74 @@
+# roles/ai-assistant/meta/main.yml
+---
+galaxy_info:
+  author: CloudMart Development Team
+  description: AI Assistant infrastructure for CloudMart e-commerce platform
+  company: CloudMart
+  license: MIT
+  min_ansible_version: 2.14
+  
+  platforms:
+    - name: Amazon
+      versions:
+        - all
+  
+  galaxy_tags:
+    - aws
+    - lambda
+    - dynamodb
+    - ai
+    - bedrock
+    - cloudmart
+    - infrastructure
+    - ecommerce
+    - automation
+    - cloud
+    - serverless
+    - streaming
+    - analytics
+
+  # Role dependencies
+dependencies: []
+
+# Collections required for this role
+collections:
+  - amazon.aws
+  - community.general
+
+# Role metadata
+role_metadata:
+  version: "1.0.0"
+  description: |
+    This role deploys the complete AI Assistant infrastructure for CloudMart,
+    including DynamoDB tables, Lambda functions, IAM roles, and Bedrock integration.
+    
+    Features:
+    - Multi-environment support (dev/staging/prod)
+    - DynamoDB tables with stream processing
+    - Serverless Lambda functions
+    - AI integration with Amazon Bedrock
+    - Real-time data synchronization to BigQuery
+    - Comprehensive monitoring and logging
+    - Secure IAM configurations
+    - Event-driven architecture
+  
+  requirements:
+    ansible: ">=2.14"
+    python: ">=3.8"
+    boto3: ">=1.26.0"
+    
+  supported_environments:
+    - dev
+    - staging
+    - prod
+    - test
+    
+  aws_services:
+    - DynamoDB
+    - Lambda
+    - IAM
+    - CloudWatch
+    - Bedrock
+    
+  architecture: "serverless"
+  category: "infrastructure"

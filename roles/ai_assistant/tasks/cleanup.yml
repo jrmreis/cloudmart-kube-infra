@@ -1,0 +1,84 @@
+# roles/ai-assistant/tasks/cleanup.yml
+---
+- name: Confirm cleanup operation
+  pause:
+    prompt: "Are you sure you want to delete ALL AI Assistant resources? This cannot be undone. Type 'yes' to continue"
+  register: cleanup_confirmation
+  when: not ansible_check_mode
+
+- name: Abort cleanup if not confirmed
+  fail:
+    msg: "Cleanup operation aborted by user"
+  when: 
+    - not ansible_check_mode
+    - cleanup_confirmation.user_input | default('') != 'yes'
+
+- name: Remove Lambda event source mapping
+  amazon.aws.lambda_event_source_mapping:
+    uuid: "{{ ai_assistant_event_mapping_uuid | default(event_source_mapping_result.uuid) }}"
+    state: absent
+  when: ai_assistant_event_mapping_uuid is defined or (event_source_mapping_result is defined and event_source_mapping_result.uuid is defined)
+  ignore_errors: true
+
+- name: Remove Lambda functions
+  amazon.aws.lambda:
+    name: "{{ item.name }}"
+    state: absent
+    region: "{{ aws_region }}"
+  loop: "{{ lambda_functions }}"
+  ignore_errors: true
+
+- name: Remove CloudWatch Log Groups
+  amazon.aws.cloudwatchlogs_log_group:
+    log_group_name: "/aws/lambda/{{ item.name }}"
+    state: absent
+  loop: "{{ lambda_functions }}"
+  ignore_errors: true
+
+- name: Remove CloudWatch alarms
+  amazon.aws.cloudwatch_metric_alarm:
+    name: "{{ project_name }}-{{ environment }}-lambda-errors"
+    state: absent
+    region: "{{ aws_region }}"
+  ignore_errors: true
+
+- name: Detach policies from Lambda role
+  amazon.aws.iam_role:
+    name: "{{ lambda_role_name }}"
+    managed_policies: []
+    state: present
+  ignore_errors: true
+
+- name: Remove custom IAM policy
+  amazon.aws.iam_managed_policy:
+    name: "{{ lambda_policy_name }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove IAM role
+  amazon.aws.iam_role:
+    name: "{{ lambda_role_name }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove DynamoDB tables
+  amazon.aws.dynamodb_table:
+    name: "{{ item.name }}"
+    state: absent
+    region: "{{ aws_region }}"
+    wait: true
+    wait_timeout: 300
+  loop: "{{ dynamodb_tables }}"
+  ignore_errors: true
+
+- name: Display cleanup completion
+  debug:
+    msg:
+      - "Cleanup completed successfully!"
+      - "All AI Assistant resources have been removed"
+      - "Resources cleaned up:"
+      - "  - {{ lambda_functions | length }} Lambda functions"
+      - "  - {{ dynamodb_tables | length }} DynamoDB tables"
+      - "  - IAM role and policies"
+      - "  - CloudWatch log groups and alarms"
+      - "  - Event source mappings"

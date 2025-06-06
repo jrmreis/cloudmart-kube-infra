@@ -1,0 +1,44 @@
+# roles/ai-assistant/tasks/lambda.yml
+---
+- name: Create Lambda functions
+  amazon.aws.lambda:
+    name: "{{ item.name }}"
+    zip_file: "{{ item.filename }}"
+    runtime: "{{ item.runtime }}"
+    role: "{{ lambda_role_result.arn }}"
+    handler: "{{ item.handler }}"
+    timeout: "{{ item.timeout | default(30) }}"
+    memory_size: "{{ item.memory_size | default(128) }}"
+    environment_variables: "{{ item.environment_variables | default({}) }}"
+    vpc_config: "{{ _lambda_vpc_config }}"
+    tags: "{{ item.tags | default({}) }}"
+    region: "{{ aws_region }}"
+    state: present
+    wait: true
+    wait_timeout: 300
+  loop: "{{ lambda_functions }}"
+  when: 
+    - lambda_zip_files.results[ansible_loop.index0].stat.exists
+  register: lambda_function_results
+
+- name: Wait for Lambda functions to be active
+  amazon.aws.lambda_info:
+    name: "{{ item.invocation.function_name }}"
+    region: "{{ aws_region }}"
+  loop: "{{ lambda_function_results.results }}"
+  when: item.invocation is defined
+  register: lambda_status_check
+  until: lambda_status_check.function.state == "Active"
+  retries: 10
+  delay: 10
+
+- name: Display Lambda function information
+  debug:
+    msg:
+      - "Function: {{ item.invocation.function_name }}"
+      - "ARN: {{ item.invocation.function_arn }}"
+      - "Runtime: {{ item.invocation.runtime }}"
+      - "Memory: {{ item.invocation.memory_size }}MB"
+      - "Timeout: {{ item.invocation.timeout }}s"
+  loop: "{{ lambda_function_results.results }}"
+  when: item.invocation is defined

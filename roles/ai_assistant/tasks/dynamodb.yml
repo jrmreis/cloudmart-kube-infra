@@ -1,0 +1,31 @@
+# roles/ai-assistant/tasks/dynamodb.yml
+---
+- name: Create DynamoDB tables
+  amazon.aws.dynamodb_table:
+    name: "{{ item.name }}"
+    hash_key_name: "{{ item.hash_key_name }}"
+    hash_key_type: "{{ item.hash_key_type }}"
+    billing_mode: "{{ item.billing_mode }}"
+    stream_enabled: "{{ item.stream_enabled | default(false) }}"
+    stream_view_type: "{{ item.stream_view_type | default(omit) }}"
+    tags: "{{ item.tags | default({}) }}"
+    region: "{{ aws_region }}"
+    state: present
+    wait: true
+    wait_timeout: 600
+  loop: "{{ dynamodb_tables }}"
+  register: dynamodb_table_results
+
+- name: Set DynamoDB table ARNs fact
+  set_fact:
+    _dynamodb_table_arns: "{{ dynamodb_table_results.results | map(attribute='table.table_arn') | list }}"
+    _dynamodb_stream_arns: "{{ dynamodb_table_results.results | selectattr('table.latest_stream_arn', 'defined') | map(attribute='table.latest_stream_arn') | list + dynamodb_table_results.results | selectattr('table.latest_stream_arn', 'defined') | map(attribute='table.latest_stream_arn') | map('regex_replace', '$', '/stream/*') | list }}"
+
+- name: Display created DynamoDB tables
+  debug:
+    msg:
+      - "Table: {{ item.table.table_name }}"
+      - "Status: {{ item.table.table_status }}"
+      - "ARN: {{ item.table.table_arn }}"
+      - "Stream ARN: {{ item.table.latest_stream_arn | default('None') }}"
+  loop: "{{ dynamodb_table_results.results }}"

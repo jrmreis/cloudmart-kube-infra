@@ -1,0 +1,56 @@
+# roles/ai-assistant/tasks/main.yml
+---
+- name: Include validation tasks
+  include_tasks: validate.yml
+  tags:
+    - validation
+
+- name: Include DynamoDB setup tasks
+  include_tasks: dynamodb.yml
+  tags:
+    - dynamodb
+    - infrastructure
+
+- name: Include IAM setup tasks
+  include_tasks: iam.yml
+  tags:
+    - iam
+    - security
+
+- name: Include Lambda deployment tasks
+  include_tasks: lambda.yml
+  tags:
+    - lambda
+    - functions
+
+- name: Include CloudWatch setup tasks
+  include_tasks: cloudwatch.yml
+  tags:
+    - cloudwatch
+    - monitoring
+
+- name: Include Bedrock integration tasks
+  include_tasks: bedrock.yml
+  when: bedrock_enabled | bool
+  tags:
+    - bedrock
+    - ai
+
+- name: Include event source mapping tasks
+  include_tasks: events.yml
+  tags:
+    - events
+    - streaming
+
+- name: Include cleanup tasks
+  include_tasks: cleanup.yml
+  when: cleanup | default(false) | bool
+  tags:
+    - cleanup
+    - never
+
+- name: Display deployment summary
+  include_tasks: summary.yml
+  tags:
+    - summary
+    - always

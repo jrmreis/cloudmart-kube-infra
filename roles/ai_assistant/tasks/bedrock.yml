@@ -1,0 +1,34 @@
+# roles/ai-assistant/tasks/bedrock.yml
+---
+- name: Grant Bedrock permission to invoke list products Lambda
+  amazon.aws.lambda_policy:
+    function_name: "{{ project_name }}-list-products-{{ environment }}"
+    statement_id: "AllowBedrockInvoke-{{ environment }}"
+    action: "lambda:InvokeFunction"
+    principal: "bedrock.amazonaws.com"
+    region: "{{ aws_region }}"
+    state: present
+  when: 
+    - lambda_function_results.results is defined
+    - lambda_function_results.results | selectattr('invocation', 'defined') | selectattr('invocation.function_name', 'search', 'list-products') | list | length > 0
+
+- name: Grant Bedrock cross-account access (if needed)
+  amazon.aws.lambda_policy:
+    function_name: "{{ project_name }}-list-products-{{ environment }}"
+    statement_id: "AllowBedrockCrossAccount-{{ environment }}"
+    action: "lambda:InvokeFunction"
+    principal: "bedrock.amazonaws.com"
+    source_account: "{{ ansible_aws_account_id | default(omit) }}"
+    region: "{{ aws_region }}"
+    state: present
+  when: 
+    - ansible_aws_account_id is defined
+    - lambda_function_results.results is defined
+    - lambda_function_results.results | selectattr('invocation', 'defined') | selectattr('invocation.function_name', 'search', 'list-products') | list | length > 0
+
+- name: Display Bedrock integration status
+  debug:
+    msg:
+      - "Bedrock integration enabled: {{ bedrock_enabled }}"
+      - "Supported models: {{ bedrock_models | join(', ') }}"
+      - "Lambda function permissions configured for Bedrock access"
