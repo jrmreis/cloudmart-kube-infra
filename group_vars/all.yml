@@ -14,10 +14,12 @@ ecr_backend_repo: cloudmart-backend
 ecr_frontend_repo: cloudmart-frontend
 
 # Application Configuration
-app_bedrock_agent_id: "<your-bedrock-agent-id>"
-app_bedrock_agent_alias_id: "<your-bedrock-agent-alias-id>"
-app_openai_api_key: "<your-openai-api-key>"
-app_openai_assistant_id: "<your-openai-assistant-id>"
+app_bedrock_agent_id: "F5Q2EGJ3CJ"
+app_bedrock_agent_alias_id: "MI0JR9ACY9"
+app_openai_api_key: "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"
+app_openai_assistant_id: "asst_uQkvMvaBsXkmrUNY9EVotD0F"
+app_azure_api_key: "3dc2fe270a57413b8f619bf6eefb76d5"
+app_azure_endpoint: "https://eastus.api.cognitive.microsoft.com/"
 
 # Application Paths
 app_backend_dir: "/home/ec2-user/challenge-day2/backend"
