@@ -20,15 +20,19 @@ spec:
         - name: PORT
           value: "5000"
         - name: AWS_REGION
-          value: "{{ aws_region }}"
+          value: ${{ secrets.AWS_REGION }}
         - name: BEDROCK_AGENT_ID
-          value: "{{ app_bedrock_agent_id }}"
+          value: ${{ secrets.BEDROCK_AGENT_ID }}
         - name: BEDROCK_AGENT_ALIAS_ID
-          value: "{{ app_bedrock_agent_alias_id }}"
+          value: ${{ secrets.BEDROCK_AGENT_ALIAS_ID }}
         - name: OPENAI_API_KEY
-          value: "{{ app_openai_api_key }}"
+          value: ${{ secrets.OPENAI_API_KEY }}
         - name: OPENAI_ASSISTANT_ID
-          value: "{{ app_openai_assistant_id }}"
+          value: ${{ secrets.OPENAI_ASSISTANT_ID }}
+        - name: AZURE_ENDPOINT
+          value: ${{ secrets.AZURE_ENDPOINT }}
+        - name: AZURE_API_KEY
+          value: ${{ secrets.AZURE_API_KEY }}
         ports:
         - containerPort: 5000
 ---
